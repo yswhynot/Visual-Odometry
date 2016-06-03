@@ -37,3 +37,81 @@ Transformation matrix:
   0.01437320668334799, 0.959605298299696, 87.723839873526;
   6.129383996429412e-05, -0.0001424905925856566, 1]
 Total time: 0.540233 seconds
+
+Img1:img/b1.jpg, Img2: img/b2.jpg
+Feature Detection 1 img time: 0.072706 seconds
+Feature Detection 2 img time: 0.139684 seconds
+Descriptor Extraction 1 img time: 0.021743 seconds
+Descriptor Extraction 2 img time: 0.034828 seconds
+Match time: 0.002266 seconds
+Homography time: 0.076035 seconds
+Transformation matrix:
+[0.92936451369212, -0.4049625769190506, 21.83448922992239;
+  -0.01008345490845447, 0.4761060593241244, 37.42581191417253;
+  7.720930796319002e-05, -0.00101323856051811, 1]
+Total time: 0.252873 seconds
+
+Img1:img/b1.jpg, Img2: img/b2.jpg
+Feature Detection 1 img time: 0.070472 seconds
+Feature Detection 2 img time: 0.137720 seconds
+Descriptor Extraction 1 img time: 0.022168 seconds
+Descriptor Extraction 2 img time: 0.035297 seconds
+Match time: 0.002318 seconds
+Homography time: 0.075889 seconds
+Transformation matrix:
+[0.92936451369212, -0.4049625769190506, 21.83448922992239;
+  -0.01008345490845447, 0.4761060593241244, 37.42581191417253;
+  7.720930796319002e-05, -0.00101323856051811, 1]
+Total time: 0.251287 seconds
+
+Img1:img/b1.jpg, Img2: img/b2.jpg
+Feature Detection 1 img time: 0.071018 seconds
+Feature Detection 2 img time: 0.140869 seconds
+Descriptor Extraction 1 img time: 0.022057 seconds
+Descriptor Extraction 2 img time: 0.035855 seconds
+Match time: 0.002276 seconds
+Homography time: 0.075258 seconds
+Transformation matrix:
+[0.92936451369212, -0.4049625769190506, 21.83448922992239;
+  -0.01008345490845447, 0.4761060593241244, 37.42581191417253;
+  7.720930796319002e-05, -0.00101323856051811, 1]
+Total time: 0.254319 seconds
+
+Img1:img/c1.jpg, Img2: img/c2.jpg
+Feature Detection 1 img time: 0.091852 seconds
+Feature Detection 2 img time: 0.174977 seconds
+Descriptor Extraction 1 img time: 0.141510 seconds
+Descriptor Extraction 2 img time: 0.242840 seconds
+Match time: 0.010672 seconds
+Homography time: 0.002411 seconds
+Transformation matrix:
+[1.02519156573906, -0.08282264803930028, -23.96655593621631;
+  0.01691935539163415, 0.9648807637832509, 84.1572576002135;
+  8.268517528593083e-05, -0.0001679460062040122, 1]
+Total time: 0.430957 seconds
+
+Img1:img/c1.jpg, Img2: img/c2.jpg
+Feature Detection 1 img time: 0.088276 seconds
+Feature Detection 2 img time: 0.168823 seconds
+Descriptor Extraction 1 img time: 0.142909 seconds
+Descriptor Extraction 2 img time: 0.243736 seconds
+Match time: 0.010791 seconds
+Homography time: 0.002406 seconds
+Transformation matrix:
+[1.02519156573906, -0.08282264803930028, -23.96655593621631;
+  0.01691935539163415, 0.9648807637832509, 84.1572576002135;
+  8.268517528593083e-05, -0.0001679460062040122, 1]
+Total time: 0.425818 seconds
+
+Img1:img/c1.jpg, Img2: img/c2.jpg
+Feature Detection 1 img time: 0.100153 seconds
+Feature Detection 2 img time: 0.188102 seconds
+Descriptor Extraction 1 img time: 0.151519 seconds
+Descriptor Extraction 2 img time: 0.253329 seconds
+Match time: 0.010744 seconds
+Homography time: 0.002449 seconds
+Transformation matrix:
+[1.02519156573906, -0.08282264803930028, -23.96655593621631;
+  0.01691935539163415, 0.9648807637832509, 84.1572576002135;
+  8.268517528593083e-05, -0.0001679460062040122, 1]
+Total time: 0.454690 seconds
