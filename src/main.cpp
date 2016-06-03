@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <iostream>
+#include <fstream>
 #include <time.h>
 #include "opencv2/opencv.hpp"
 #include "opencv2/core/core.hpp"
@@ -128,8 +129,11 @@ void readme();
 int main(int argc, char** argv) {
 
 	Mat img1, img2;
-	img1 = imread("img/a1.jpg", CV_BGR2GRAY);
-	img2 = imread("img/a2.jpg", CV_BGR2GRAY);
+	img1 = imread(argv[1], CV_BGR2GRAY);
+	img2 = imread(argv[2], CV_BGR2GRAY);
+
+	freopen("data/speed_test.txt", "a", stdout);
+	std::cout << "\nImg1:" << argv[1] << ", Img2: " << argv[2] << std::endl;
 
 	std::vector<KeyPoint> keypoints1;
 	std::vector<KeyPoint> keypoints2;
@@ -207,7 +211,7 @@ int main(int argc, char** argv) {
 	printf("Total time: %f seconds\n",
 			(float) (clock() - c_feature) / CLOCKS_PER_SEC);
 
-	waitKey(0);
+	fclose(stdout);
 
 	return 0;
 }
