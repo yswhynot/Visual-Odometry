@@ -273,6 +273,20 @@ Transformation matrix:
 Total time: 1.175859 seconds
 
 Img1:img/h1.jpg, Img2: img/h2.jpg
+Feature Detection 1 img time: 0.090096 seconds
+Feature Detection 2 img time: 0.175729 seconds
+Descriptor Extraction 1 img time: 0.165326 seconds
+Descriptor Extraction 2 img time: 0.330263 seconds
+Match time: 0.006276 seconds
+
+Img1:img/h1.jpg, Img2: img/h2.jpg
+Feature Detection 1 img time: 0.087731 seconds
+Feature Detection 2 img time: 0.171177 seconds
+Descriptor Extraction 1 img time: 0.164085 seconds
+Descriptor Extraction 2 img time: 0.326718 seconds
+Match time: 0.006967 seconds
+
+Img1:img/h1.jpg, Img2: img/h2.jpg
 Feature Detection 1 img time: 0.135665 seconds
 Feature Detection 2 img time: 0.253133 seconds
 Descriptor Extraction 1 img time: 0.313719 seconds
