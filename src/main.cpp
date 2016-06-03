@@ -15,111 +15,199 @@ void readme();
 
 // reprojectImageTo3D
 
-/** @function main */
+/** @function main for video */
+//int main(int argc, char** argv) {
+//	//	if (argc != 3) {
+//	//		readme();
+//	//		return -1;
+//	//	}
+//
+//	VideoCapture cap(0); // open default cam
+//	if (!cap.isOpened())
+//		return -1;
+//
+//	namedWindow("Features", 1);
+//
+//	Mat img_prev;
+//	std::vector<KeyPoint> keypoints_prev;
+//	Mat descriptors_prev;
+//
+//	// Camera intrinsic matrix
+////	Mat cam_intrinsic = (Mat_<double>(3, 3) << 825.16620138086046, 0, 273.20022871560587,
+////			0, 822.93582954637532, 213.79980993132662,
+////			0, 0, 1);
+////	std::vector<double> cam_distortion = {0.21446347541767000, -0.43149636725486124,
+////			1.9699575897250124*0.001, -1.7175748488014262*0.01};
+//
+//	for (;;) {
+//		Mat frame;
+//		Mat img_curr;
+//		cap >> frame; // new frame from cam
+//		cvtColor(frame, img_curr, CV_BGR2GRAY);
+//
+//		clock_t c_feature, c_extractor, c_match, c_homo;
+//
+//		// step 1
+//		c_feature = clock();
+//		int minHessian = 400;
+//		SurfFeatureDetector detector(minHessian);
+//		std::vector<KeyPoint> keypoints_curr;
+//
+//		detector.detect(img_curr, keypoints_curr);
+//
+//		printf("Feature Detection time: %f seconds\n", (float)(clock() - c_feature) / CLOCKS_PER_SEC);
+//
+//		Mat img_keypoints_curr;
+//		drawKeypoints(img_curr, keypoints_curr, img_keypoints_curr,
+//				Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+//		imshow("Features", img_keypoints_curr);
+//
+//		// step 2: descriptor
+//		c_extractor = clock();
+//		SurfDescriptorExtractor extractor;
+//		Mat descriptors_curr;
+//		extractor.compute(img_curr, keypoints_curr, descriptors_curr);
+//
+//		printf("Descriptor Extraction time: %f seconds\n", (float)(clock() - c_extractor) / CLOCKS_PER_SEC);
+//
+//		// step 3: FLANN matcher
+//		c_match = clock();
+//		if (!img_prev.empty()) {
+//			FlannBasedMatcher matcher;
+//			std::vector<DMatch> matches;
+//			matcher.match(descriptors_curr, descriptors_prev, matches);
+//
+//			printf("Match time: %f seconds\n", (float)(clock() - c_match) / CLOCKS_PER_SEC);
+//
+//			c_homo = clock();
+//			// key points distance
+//			double min_dis = 100;
+//			for (int i = 0; i < descriptors_curr.rows; i++) {
+//				if (matches[i].distance < min_dis)
+//					min_dis = matches[i].distance;
+//			}
+//
+//			std::vector<DMatch> good_matches;
+//
+//			for (int i = 0; i < descriptors_curr.rows; i++) {
+//				if (matches[i].distance < 3 * min_dis)
+//					good_matches.push_back(matches[i]);
+//			}
+//
+//			std::vector<Point2f> good_curr;
+//			std::vector<Point2f> good_prev;
+//
+//			for (int i = 0; i < good_matches.size(); i++) {
+//				//-- Get the keypoints from the good matches
+//				good_curr.push_back(keypoints_curr[good_matches[i].queryIdx].pt);
+//				good_prev.push_back(keypoints_prev[good_matches[i].trainIdx].pt);
+//			}
+//
+//			Mat H = findHomography(good_curr, good_prev, CV_RANSAC);
+//
+//			printf("Homography time: %f seconds\n", (float)(clock() - c_homo) / CLOCKS_PER_SEC);
+//
+//			std::cout << "Transformation matrix:\n" << H << std::endl;
+//
+//		}
+//
+//		img_curr.copyTo(img_prev);
+//		keypoints_prev = keypoints_curr;
+//		descriptors_curr.copyTo(descriptors_prev);
+//
+//		printf("Total time: %f seconds\n", (float)(clock() - c_feature) / CLOCKS_PER_SEC);
+//
+//		if (waitKey(30) >= 0)
+//			break;
+//	}
+//
+//	return 0;
+//}
+
+// main for two imgs
 int main(int argc, char** argv) {
-	//	if (argc != 3) {
-	//		readme();
-	//		return -1;
-	//	}
 
-	VideoCapture cap(0); // open default cam
-	if (!cap.isOpened())
-		return -1;
+	Mat img1, img2;
+	img1 = imread("img/a1.jpg", CV_BGR2GRAY);
+	img2 = imread("img/a2.jpg", CV_BGR2GRAY);
 
-	namedWindow("Features", 1);
+	std::vector<KeyPoint> keypoints1;
+	std::vector<KeyPoint> keypoints2;
 
-	Mat img_prev;
-	std::vector<KeyPoint> keypoints_prev;
-	Mat descriptors_prev;
+	clock_t c_feature, c_extractor, c_match, c_homo;
 
-	// Camera intrinsic matrix
-//	Mat cam_intrinsic = (Mat_<double>(3, 3) << 825.16620138086046, 0, 273.20022871560587,
-//			0, 822.93582954637532, 213.79980993132662,
-//			0, 0, 1);
-//	std::vector<double> cam_distortion = {0.21446347541767000, -0.43149636725486124,
-//			1.9699575897250124*0.001, -1.7175748488014262*0.01};
+	// step 1
+	c_feature = clock();
+	int minHessian = 400;
+	SurfFeatureDetector detector(minHessian);
 
-	for (;;) {
-		Mat frame;
-		Mat img_curr;
-		cap >> frame; // new frame from cam
-		cvtColor(frame, img_curr, CV_BGR2GRAY);
+	detector.detect(img1, keypoints1);
+	printf("Feature Detection 1 img time: %f seconds\n",
+			(float) (clock() - c_feature) / CLOCKS_PER_SEC);
 
-		clock_t c_feature, c_extractor, c_match, c_homo;
+	detector.detect(img2, keypoints2);
 
-		// step 1
-		c_feature = clock();
-		int minHessian = 400;
-		SurfFeatureDetector detector(minHessian);
-		std::vector<KeyPoint> keypoints_curr;
+	printf("Feature Detection 2 img time: %f seconds\n",
+			(float) (clock() - c_feature) / CLOCKS_PER_SEC);
 
-		detector.detect(img_curr, keypoints_curr);
+	// step 2: descriptor
+	c_extractor = clock();
+	SurfDescriptorExtractor extractor;
+	Mat descriptors1, descriptors2;
 
-		printf("Feature Detection time: %f seconds\n", (float)(clock() - c_feature) / CLOCKS_PER_SEC);
+	extractor.compute(img1, keypoints1, descriptors1);
+	printf("Descriptor Extraction 1 img time: %f seconds\n",
+			(float) (clock() - c_extractor) / CLOCKS_PER_SEC);
 
-		Mat img_keypoints_curr;
-		drawKeypoints(img_curr, keypoints_curr, img_keypoints_curr,
-				Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-		imshow("Features", img_keypoints_curr);
+	extractor.compute(img2, keypoints2, descriptors2);
+	printf("Descriptor Extraction 2 img time: %f seconds\n",
+			(float) (clock() - c_extractor) / CLOCKS_PER_SEC);
 
-		// step 2: descriptor
-		c_extractor = clock();
-		SurfDescriptorExtractor extractor;
-		Mat descriptors_curr;
-		extractor.compute(img_curr, keypoints_curr, descriptors_curr);
+	// step 3: FLANN matcher
+	c_match = clock();
 
-		printf("Descriptor Extraction time: %f seconds\n", (float)(clock() - c_extractor) / CLOCKS_PER_SEC);
+	FlannBasedMatcher matcher;
+	std::vector<DMatch> matches;
+	matcher.match(descriptors1, descriptors2, matches);
 
-		// step 3: FLANN matcher
-		c_match = clock();
-		if (!img_prev.empty()) {
-			FlannBasedMatcher matcher;
-			std::vector<DMatch> matches;
-			matcher.match(descriptors_curr, descriptors_prev, matches);
+	printf("Match time: %f seconds\n",
+			(float) (clock() - c_match) / CLOCKS_PER_SEC);
 
-			printf("Match time: %f seconds\n", (float)(clock() - c_match) / CLOCKS_PER_SEC);
-
-			c_homo = clock();
-			// key points distance
-			double min_dis = 100;
-			for (int i = 0; i < descriptors_curr.rows; i++) {
-				if (matches[i].distance < min_dis)
-					min_dis = matches[i].distance;
-			}
-
-			std::vector<DMatch> good_matches;
-
-			for (int i = 0; i < descriptors_curr.rows; i++) {
-				if (matches[i].distance < 3 * min_dis)
-					good_matches.push_back(matches[i]);
-			}
-
-			std::vector<Point2f> good_curr;
-			std::vector<Point2f> good_prev;
-
-			for (int i = 0; i < good_matches.size(); i++) {
-				//-- Get the keypoints from the good matches
-				good_curr.push_back(keypoints_curr[good_matches[i].queryIdx].pt);
-				good_prev.push_back(keypoints_prev[good_matches[i].trainIdx].pt);
-			}
-
-			Mat H = findHomography(good_curr, good_prev, CV_RANSAC);
-
-			printf("Homography time: %f seconds\n", (float)(clock() - c_homo) / CLOCKS_PER_SEC);
-
-			std::cout << "Transformation matrix:\n" << H << std::endl;
-
-		}
-
-		img_curr.copyTo(img_prev);
-		keypoints_prev = keypoints_curr;
-		descriptors_curr.copyTo(descriptors_prev);
-
-		printf("Total time: %f seconds\n", (float)(clock() - c_feature) / CLOCKS_PER_SEC);
-
-		if (waitKey(30) >= 0)
-			break;
+	c_homo = clock();
+	// key points distance
+	double min_dis = 100;
+	for (int i = 0; i < descriptors1.rows; i++) {
+		if (matches[i].distance < min_dis)
+			min_dis = matches[i].distance;
 	}
+
+	std::vector<DMatch> good_matches;
+
+	for (int i = 0; i < descriptors1.rows; i++) {
+		if (matches[i].distance < 3 * min_dis)
+			good_matches.push_back(matches[i]);
+	}
+
+	std::vector<Point2f> good1;
+	std::vector<Point2f> good2;
+
+	for (int i = 0; i < good_matches.size(); i++) {
+		//-- Get the keypoints from the good matches
+		good1.push_back(keypoints1[good_matches[i].queryIdx].pt);
+		good2.push_back(keypoints2[good_matches[i].trainIdx].pt);
+	}
+
+	Mat H = findHomography(good1, good2, CV_RANSAC);
+
+	printf("Homography time: %f seconds\n",
+			(float) (clock() - c_homo) / CLOCKS_PER_SEC);
+
+	std::cout << "Transformation matrix:\n" << H << std::endl;
+
+	printf("Total time: %f seconds\n",
+			(float) (clock() - c_feature) / CLOCKS_PER_SEC);
+
+	waitKey(0);
 
 	return 0;
 }
