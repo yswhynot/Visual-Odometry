@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <time.h>
+#include <string>
 #include "opencv2/opencv.hpp"
 #include "opencv2/core/core.hpp"
 #include "opencv2/features2d/features2d.hpp"
@@ -126,14 +127,15 @@ void readme();
 //}
 
 // main for two imgs
-int main(int argc, char** argv) {
 
-	Mat img1, img2;
-	img1 = imread(argv[1], CV_BGR2GRAY);
-	img2 = imread(argv[2], CV_BGR2GRAY);
+Mat img1, img2;
+std::vector<std::string> detector_gp, extractor_gp;
 
-	freopen("data/speed_test.txt", "a", stdout);
-	std::cout << "\nImg1:" << argv[1] << ", Img2: " << argv[2] << std::endl;
+enum extractor_gp {
+	E_SIFT, E_SURF, E_ORB, E_BRISK, E_BRIEF, E_FREAK, E_NUM
+};
+
+void DEM(int _detector, int _extractor, int _matcher) {
 
 	std::vector<KeyPoint> keypoints1;
 	std::vector<KeyPoint> keypoints2;
@@ -142,16 +144,24 @@ int main(int argc, char** argv) {
 
 	// step 1
 	c_feature = clock();
+
+	if(_detector == D_SURF) {
+
+	} else if(_detector == D_SIFT) {
+
+	} else {
+
+	}
+
 	int minHessian = 400;
 	SurfFeatureDetector detector(minHessian);
-
 	detector.detect(img1, keypoints1);
-	printf("Feature Detection 1 img time: %f seconds\n",
+	printf("%f ",
 			(float) (clock() - c_feature) / CLOCKS_PER_SEC);
 
 	detector.detect(img2, keypoints2);
 
-	printf("Feature Detection 2 img time: %f seconds\n",
+	printf("%f ",
 			(float) (clock() - c_feature) / CLOCKS_PER_SEC);
 
 	// step 2: descriptor
@@ -160,11 +170,11 @@ int main(int argc, char** argv) {
 	Mat descriptors1, descriptors2;
 
 	extractor.compute(img1, keypoints1, descriptors1);
-	printf("Descriptor Extraction 1 img time: %f seconds\n",
+	printf("%f ",
 			(float) (clock() - c_extractor) / CLOCKS_PER_SEC);
 
 	extractor.compute(img2, keypoints2, descriptors2);
-	printf("Descriptor Extraction 2 img time: %f seconds\n",
+	printf("%f ",
 			(float) (clock() - c_extractor) / CLOCKS_PER_SEC);
 
 	// step 3: FLANN matcher
@@ -174,7 +184,7 @@ int main(int argc, char** argv) {
 	std::vector<DMatch> matches;
 	matcher.match(descriptors1, descriptors2, matches);
 
-	printf("Match time: %f seconds\n",
+	printf("%f ",
 			(float) (clock() - c_match) / CLOCKS_PER_SEC);
 
 	c_homo = clock();
@@ -203,13 +213,39 @@ int main(int argc, char** argv) {
 
 	Mat H = findHomography(good1, good2, CV_RANSAC);
 
-	printf("Homography time: %f seconds\n",
+	printf("%f ",
 			(float) (clock() - c_homo) / CLOCKS_PER_SEC);
 
 	std::cout << "Transformation matrix:\n" << H << std::endl;
 
-	printf("Total time: %f seconds\n",
+	printf(" %f\n",
 			(float) (clock() - c_feature) / CLOCKS_PER_SEC);
+
+}
+
+void init() {
+	std::string init_detect[] = {"FAST", "STAR", "SIFT", "SURF", "ORB", "BRISK",
+		"MSER", "GFTT", "HARRIS", "Dense", "SimpleBlob"
+	};
+	for(int i=0; i < sizeof(init_detect)/sizeof(init_detect))
+
+}
+
+int main(int argc, char** argv) {
+
+	//	Mat img1, img2;
+	img1 = imread(argv[1], CV_BGR2GRAY);
+	img2 = imread(argv[2], CV_BGR2GRAY);
+
+	freopen("data/speed_test.txt", "w", stdout);
+
+	init();
+
+	for (int d = 0; d < D_NUM; d++) {
+		for (int e = 0; e < E_NUM; e++) {
+			DEM(d, e, 0);
+		}
+	}
 
 	fclose(stdout);
 
