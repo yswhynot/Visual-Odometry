@@ -32,6 +32,13 @@ int main(int argc, char** argv) {
 	std::vector<KeyPoint> keypoints_prev;
 	Mat descriptors_prev;
 
+	// Camera intrinsic matrix
+//	Mat cam_intrinsic = (Mat_<double>(3, 3) << 825.16620138086046, 0, 273.20022871560587,
+//			0, 822.93582954637532, 213.79980993132662,
+//			0, 0, 1);
+//	std::vector<double> cam_distortion = {0.21446347541767000, -0.43149636725486124,
+//			1.9699575897250124*0.001, -1.7175748488014262*0.01};
+
 	for (;;) {
 		Mat frame;
 		Mat img_curr;
