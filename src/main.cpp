@@ -129,53 +129,113 @@ void readme();
 // main for two imgs
 
 Mat img1, img2;
-std::vector<std::string> detector_gp, extractor_gp;
+enum detector_gp {
+	D_FAST,
+	D_STAR,
+	D_SIFT,
+	D_SURF,
+	D_ORB,
+	D_BRISK,
+	D_MSER,
+	D_GFTT,
+	D_HARRIS,
+	D_Dense,
+	D_SimpleBlob,
+	D_NUM
+};
 
 enum extractor_gp {
 	E_SIFT, E_SURF, E_ORB, E_BRISK, E_BRIEF, E_FREAK, E_NUM
 };
 
-void DEM(int _detector, int _extractor, int _matcher) {
+void DEM(int _detector, int _extractor, int _matcher, char* img1_name,
+		char* img2_name) {
 
 	std::vector<KeyPoint> keypoints1;
 	std::vector<KeyPoint> keypoints2;
 
 	clock_t c_feature, c_extractor, c_match, c_homo;
 
+	printf("%s %s ", img1_name, img2_name);
+
 	// step 1
 	c_feature = clock();
 
-	if(_detector == D_SURF) {
-
-	} else if(_detector == D_SIFT) {
-
-	} else {
-
+	Ptr<FeatureDetector> detector;
+	switch (_detector) {
+	case D_FAST:
+		detector = new FastFeatureDetector();
+		break;
+	case D_STAR:
+		detector = new StarFeatureDetector();
+		break;
+	case D_SIFT:
+		detector = new SiftFeatureDetector();
+		break;
+	case D_SURF:
+		detector = new SurfFeatureDetector();
+		break;
+	case D_ORB:
+		detector = new ORB();
+		break;
+	case D_BRISK:
+		detector = new BRISK();
+		break;
+	case D_MSER:
+		detector = new MSER();
+		break;
+	case D_GFTT:
+		detector = new GoodFeaturesToTrackDetector();
+		break;
+	case D_HARRIS:
+		detector = new GoodFeaturesToTrackDetector(1000, 0.01, 1, 3, true);
+		break;
+	case D_Dense:
+		detector = new DenseFeatureDetector();
+		break;
+	case D_SimpleBlob:
+		detector = new SimpleBlobDetector();
+		break;
+	default:
+		break;
 	}
 
-	int minHessian = 400;
-	SurfFeatureDetector detector(minHessian);
-	detector.detect(img1, keypoints1);
-	printf("%f ",
-			(float) (clock() - c_feature) / CLOCKS_PER_SEC);
-
-	detector.detect(img2, keypoints2);
-
-	printf("%f ",
-			(float) (clock() - c_feature) / CLOCKS_PER_SEC);
+	detector->detect(img1, keypoints1);
+	printf("%f ", (float) (clock() - c_feature) / CLOCKS_PER_SEC);
+	detector->detect(img2, keypoints2);
+	printf("%f ", (float) (clock() - c_feature) / CLOCKS_PER_SEC);
 
 	// step 2: descriptor
 	c_extractor = clock();
-	SurfDescriptorExtractor extractor;
+	Ptr<DescriptorExtractor> extractor;
 	Mat descriptors1, descriptors2;
+	switch(_extractor) {
+	case E_SIFT:
+		extractor = new SiftDescriptorExtractor();
+		break;
+	case E_SURF:
+		extractor = new SurfDescriptorExtractor();
+		break;
+	case E_ORB:
+		extractor = new ORB();
+		break;
+	case E_BRISK:
+		extractor = new BRISK();
+		break;
+	case E_BRIEF:
+		extractor = new BriefDescriptorExtractor();
+		break;
+	case E_FREAK:
+		extractor = new FREAK();
+		break;
+	default:
+		break;
+	}
 
-	extractor.compute(img1, keypoints1, descriptors1);
-	printf("%f ",
-			(float) (clock() - c_extractor) / CLOCKS_PER_SEC);
-
-	extractor.compute(img2, keypoints2, descriptors2);
-	printf("%f ",
-			(float) (clock() - c_extractor) / CLOCKS_PER_SEC);
+	extractor->compute(img1, keypoints1, descriptors1);
+	printf("%f ", (float) (clock() - c_extractor) / CLOCKS_PER_SEC);
+	extractor->compute(img2, keypoints2, descriptors2);
+	printf("%f ", (float) (clock() - c_extractor) / CLOCKS_PER_SEC);
 
 	// step 3: FLANN matcher
 	c_match = clock();
@@ -184,8 +244,7 @@ void DEM(int _detector, int _extractor, int _matcher) {
 	std::vector<DMatch> matches;
 	matcher.match(descriptors1, descriptors2, matches);
 
-	printf("%f ",
-			(float) (clock() - c_match) / CLOCKS_PER_SEC);
+	printf("%f ", (float) (clock() - c_match) / CLOCKS_PER_SEC);
 
 	c_homo = clock();
 	// key points distance
@@ -213,21 +272,11 @@ void DEM(int _detector, int _extractor, int _matcher) {
 
 	Mat H = findHomography(good1, good2, CV_RANSAC);
 
-	printf("%f ",
-			(float) (clock() - c_homo) / CLOCKS_PER_SEC);
+	printf("%f ", (float) (clock() - c_homo) / CLOCKS_PER_SEC);
 
-	std::cout << "Transformation matrix:\n" << H << std::endl;
+	//	std::cout << "Transformation matrix:\n" << H << std::endl;
 
-	printf(" %f\n",
-			(float) (clock() - c_feature) / CLOCKS_PER_SEC);
-
-}
-
-void init() {
-	std::string init_detect[] = {"FAST", "STAR", "SIFT", "SURF", "ORB", "BRISK",
-		"MSER", "GFTT", "HARRIS", "Dense", "SimpleBlob"
-	};
-	for(int i=0; i < sizeof(init_detect)/sizeof(init_detect))
+	printf(" %f\n", (float) (clock() - c_feature) / CLOCKS_PER_SEC);
 
 }
 
@@ -237,17 +286,15 @@ int main(int argc, char** argv) {
 	img1 = imread(argv[1], CV_BGR2GRAY);
 	img2 = imread(argv[2], CV_BGR2GRAY);
 
-	freopen("data/speed_test.txt", "w", stdout);
-
-	init();
+	//	freopen("data/speed_test.txt", "w", stdout);
 
 	for (int d = 0; d < D_NUM; d++) {
 		for (int e = 0; e < E_NUM; e++) {
-			DEM(d, e, 0);
+			DEM(d, e, 0, argv[1], argv[2]);
 		}
 	}
 
-	fclose(stdout);
+	//	fclose(stdout);
 
 	return 0;
 }
