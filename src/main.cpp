@@ -151,7 +151,7 @@ enum extractor_gp {
 void DEM(int _detector, int _extractor, int _matcher, std::string& img1_name,
 		std::string& img2_name) {
 	try {
-		freopen("data/speed_test.txt", "a", stdout);
+		freopen("data/06-06-12-54pm.txt", "a", stdout);
 
 		std::vector<KeyPoint> keypoints1;
 		std::vector<KeyPoint> keypoints2;
@@ -217,6 +217,8 @@ void DEM(int _detector, int _extractor, int _matcher, std::string& img1_name,
 		printf("%f ", (float) (clock() - c_feature) / CLOCKS_PER_SEC);
 		detector->detect(img2, keypoints2);
 		printf("%f ", (float) (clock() - c_feature) / CLOCKS_PER_SEC);
+		printf("%d ", keypoints1.size());
+		printf("%d ", keypoints2.size());
 
 		// step 2: descriptor
 		c_extractor = clock();
@@ -269,6 +271,7 @@ void DEM(int _detector, int _extractor, int _matcher, std::string& img1_name,
 		matcher.match(descriptors1, descriptors2, matches);
 
 		printf("%f ", (float) (clock() - c_match) / CLOCKS_PER_SEC);
+		printf("%d ", matches.size());
 
 		c_homo = clock();
 		// key points distance
@@ -303,12 +306,12 @@ void DEM(int _detector, int _extractor, int _matcher, std::string& img1_name,
 
 		//	std::cout << "Transformation matrix:\n" << H << std::endl;
 
-		printf(" %f\n", (float) (clock() - c_feature) / CLOCKS_PER_SEC);
+		printf(" %f\n", (float) (clock() - c_feature) * 1000000 / (keypoints1.size() * CLOCKS_PER_SEC));
 
 		fclose(stdout);
 
-	} catch (...) {
-		printf("-----\n");
+	} catch (Exception& e) {
+		std::cout << e.what() << std::endl;
 	}
 
 }
@@ -316,15 +319,17 @@ void DEM(int _detector, int _extractor, int _matcher, std::string& img1_name,
 int main(int argc, char** argv) {
 
 	//	Mat img1, img2;
-	char img_list[10] = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j' };
+//	char img_list[21] = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+//			'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u' };
+	char img_list[8] = { 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
 
-	for (int ii = 0; ii < 10; ii++) {
-		std::string img1_name = "img/";
+	for (int ii = 0; ii < 8; ii++) {
+		std::string img1_name = "dataset/";
 		img1_name += img_list[ii];
-		img1_name += std::string("1.jpg");
-		std::string img2_name = "img/";
+		img1_name += std::string("0.png");
+		std::string img2_name = "dataset/";
 		img2_name += img_list[ii];
-		img2_name += std::string("2.jpg");
+		img2_name += std::string("1.png");
 		img1 = imread(img1_name, CV_BGR2GRAY);
 		img2 = imread(img2_name, CV_BGR2GRAY);
 
@@ -335,6 +340,8 @@ int main(int argc, char** argv) {
 				}
 			}
 		}
+
+//		DEM(D_FAST, E_SURF, 0, img1_name, img2_name);
 	}
 
 	return 0;
