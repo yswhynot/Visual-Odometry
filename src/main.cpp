@@ -35,12 +35,18 @@ int main(int argc, char** argv) {
 	Mat descriptors_prev;
 
 	// Camera intrinsic matrix
-	Mat cam_intrinsic = Mat_<double>::zeros(3, 3);
-	Mat cam_distortion = Mat_<double>::zeros(5, 1);
+	Mat cam_intrinsic = Mat_<float>::zeros(3, 3);
+	Mat cam_distortion = Mat_<float>::zeros(5, 1);
 
 	FileStorage fs("com_info/201606071648.yml", FileStorage::READ);
 	fs["camera_matrix"] >> cam_intrinsic;
 	fs["distortion_coefficients"] >> cam_distortion;
+
+	Mat cam_rotation = Mat_<float>::eye(3, 3);
+	Vec cam_trans = Vec_<float>::zeros(3);
+	Mat R1, R2, P1, P2, Q;
+	stereoRectify(cam_intrinsic, cam_distortion, cam_intrinsic, cam_distortion,
+					Size(800, 600), cam_rotation, cam_trans, R1, R2, P1, P2, Q);
 
 	for (;;) {
 		Mat frame;
@@ -122,8 +128,9 @@ int main(int argc, char** argv) {
 //			Mat t1 = u.col(2);
 //			Mat t2 = - u.col(2);
 
-			stereoRectify(cam_intrinsic, cam_distortion, cam_intrinsic, cam_distortion,
-					img_curr.size(), R1);
+			Mat p4d;
+			triangulatePoints(P1, P2, good_curr, good_prev, p4d);
+			
 
 		}
 
