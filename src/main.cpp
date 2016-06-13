@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
 	//		return -1;
 	//	}
 
-	VideoCapture cap(0); // open default cam
+	VideoCapture cap(1); // open default cam
 	if (!cap.isOpened())
 		return -1;
 
@@ -283,43 +283,91 @@ int main(int argc, char** argv) {
 				Mat w_value, u, vt, R90;
 				SVD::compute(E, w_value, u, vt);
 				R90 = Mat::zeros(3, 3, CV_64F);
-				R90.at<double>(0, 1) = -1;
-				R90.at<double>(1, 0) = 1;
-				R90.at<double>(2, 2) = 1;
+				R90.at<double> (0, 1) = -1;
+				R90.at<double> (1, 0) = 1;
+				R90.at<double> (2, 2) = 1;
 
-				std::cout << "det F: " << determinant(F) << std::endl;
-				std::cout << "det E: " << determinant(E) << std::endl;
-				std::cout << "det u: " << determinant(u) << std::endl;
-				std::cout << "det vt: " << determinant(vt) << std::endl;
-				Mat tmp_R[4] = {u * R90 * vt, u * R90.t() * vt, - u * R90 * vt, - u * R90.t() * vt};
+				//				std::cout << "det F: " << determinant(F) << std::endl;
+				//				std::cout << "det E: " << determinant(E) << std::endl;
+				//				std::cout << "det u: " << determinant(u) << std::endl;
+				//				std::cout << "det vt: " << determinant(vt) << std::endl;
+				Mat tmp_R[4] = { u * R90 * vt, u * R90.t() * vt, -u * R90 * vt,
+						-u * R90.t() * vt };
 				Mat R1, R2;
 				std::vector<int> tmp_R_array;
-				for(int ii = 0; ii < 4; ii++) {
+				for (int ii = 0; ii < 4; ii++) {
 					float tmp_det = determinant(tmp_R[ii]);
-					if(tmp_det == 1.0) {
+					if (tmp_det == 1.0) {
 						tmp_R_array.push_back(ii);
-						printf("selected: %d\n", ii);
+						//						printf("selected: %d\n", ii);
 					}
 				}
-				R1 = tmp_R[tmp_R_array[0]]; R2 = tmp_R[tmp_R_array[1]];
+				R1 = tmp_R[tmp_R_array[0]];
+				R2 = tmp_R[tmp_R_array[1]];
 
 				Mat t1 = u.col(2);
 				Mat t2 = -u.col(2);
 
-				std::cout << "R1: " << R1 << std::endl;
-				std::cout << "R2: " << R2 << std::endl;
-				std::cout << "t1: " << t1 << std::endl;
-				std::cout << "t2: " << t2 << std::endl;
+				//				std::cout << "R1: " << R1 << std::endl;
+				//				std::cout << "R2: " << R2 << std::endl;
+				//				std::cout << "t1: " << t1 << std::endl;
+				//				std::cout << "t2: " << t2 << std::endl;
+				std::vector<Mat> rt;
+				for (int i = 0; i < 4; i++) {
+					Mat tmp = Mat::zeros(4, 4, CV_64F);
+					tmp.at<double> (3, 3) = 1;
+					rt.push_back(tmp);
+				}
+				R1.copyTo(rt[0](Rect(0, 0, R1.cols, R1.rows)));
+				t1.copyTo(rt[0](Rect(3, 0, t1.cols, t1.rows)));
+				R1.copyTo(rt[1](Rect(0, 0, R1.cols, R1.rows)));
+				t2.copyTo(rt[1](Rect(3, 0, t2.cols, t2.rows)));
+				R2.copyTo(rt[2](Rect(0, 0, R2.cols, R2.rows)));
+				t1.copyTo(rt[2](Rect(3, 0, t1.cols, t1.rows)));
+				R2.copyTo(rt[3](Rect(0, 0, R2.cols, R2.rows)));
+				t2.copyTo(rt[3](Rect(3, 0, t2.cols, t2.rows)));
 
-				Mat p(3, 1, CV_64F, Scalar(1));
-				printf("r1 t1:\n");
-				std::cout << R1 * p + t1 << std::endl;
-				printf("r1 t2:\n");
-				std::cout << R1 * p + t2 << std::endl;
-				printf("r2 t1:\n");
-				std::cout << R2 * p + t1 << std::endl;
-				printf("r2 t2:\n");
-				std::cout << R2 * p + t2 << std::endl;
+				// step 6: reconstruct 3d
+				std::vector<Point3f> features2d, features3d;
+
+				for (int i = 0; i < keypoints_curr.size(); i++) {
+					Point3f tmp_p;
+					tmp_p.x = keypoints_curr[i].pt.x;
+					tmp_p.y = keypoints_curr[i].pt.y;
+					tmp_p.z = 1;
+					features2d.push_back(tmp_p);
+				}
+				Mat cam_trans_3d = Mat::zeros(4, 4, CV_64F);
+				Mat cam_inv = cam_intrinsic.inv();
+				cam_inv.copyTo(
+						cam_trans_3d(Rect(0, 0, cam_inv.cols, cam_inv.rows)));
+				cam_trans_3d.at<double> (3, 3) = 1;
+
+				std::cout << "cam_trans: " << cam_trans_3d << std::endl;
+				perspectiveTransform(features2d, features3d, cam_trans_3d);
+
+				// step 7: select r-t pair
+				std::vector<double> positive_percent;
+				int max_rt_count = 0;
+				int selected_rt;
+				for (int i = 0; i < 4; i++) {
+					std::vector<Point3d> features3d_n;
+					unsigned int count;
+					Mat rt_tmp = rt[i];
+					std::cout << "rt: " << rt_tmp << std::endl;
+					perspectiveTransform(features3d, features3d_n, rt_tmp);
+					for (int j = 0; j < features3d_n.size(); j++) {
+						if (features3d_n[j].z > 0)
+							count++;
+					}
+					positive_percent.push_back(count / features3d_n.size());
+					if (count > max_rt_count) {
+						max_rt_count = count;
+						selected_rt = i;
+					}
+				}
+				printf("select rt: %d, percent positive: %f, count: %d\n", selected_rt,
+						positive_percent[selected_rt], max_rt_count);
 
 			} catch (...) {
 			}
