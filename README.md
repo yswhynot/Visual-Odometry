@@ -1,4 +1,4 @@
 # Visual-Odometry
-OpenCV 2.4
+OpenCV 3.1
 Test
 
