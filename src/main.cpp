@@ -165,11 +165,6 @@ int main(int argc, char** argv) {
 		imshow("Features", img_keypoints_curr);
 		std::string output = "output/";
 		output += ss.str();
-		//		imwrite(output, img_keypoints_curr);
-
-		//		Mat norm_t;
-		//		normalizeFeatures(good_prev, norm_t);
-		//		normalizeFeatures(good_curr, norm_t);
 
 		try {
 			Mat E = findEssentialMat(good_prev, good_curr, cam_intrinsic.at<double>(0, 0),
@@ -179,86 +174,6 @@ int main(int argc, char** argv) {
 					Point2f(cam_intrinsic.at<double>(0, 2), cam_intrinsic.at<double>(1, 2)));
 			std::cout << "R: " << R << std::endl;
 			std::cout << "t: " << t << std::endl;
-
-//			// step 4: find fundamental Mat and rectification
-//			Mat F = findFundamentalMat(good_prev, good_curr, CV_RANSAC);
-//
-//			printf("Fundamental Mat time: %f seconds\n",
-//					(float) (clock() - c_homo) / CLOCKS_PER_SEC);
-//
-//			// step 5: normalize F
-//			Mat Fw_value, Fu, Fvt;
-//			Mat Fw = Mat::zeros(3, 3, CV_64F);
-//			SVD::compute(F, Fw_value, Fu, Fvt);
-//			Fw.at<double> (0, 0) = Fw_value.at<double> (0, 0);
-//			Fw.at<double> (1, 1) = Fw_value.at<double> (0, 1);
-//			Mat F_norm = Fu * Fw * Fvt;
-//			//			F_norm = norm_t.t() * F_norm * norm_t;
-//			//			std::cout << "good_prev: " << good_prev << std::endl;
-//			//			std::cout << "good_curr: " << good_curr << std::endl;
-//
-//			F_norm = F_norm / norm(F_norm);
-//			if (F_norm.at<double> (2, 2) < 0)
-//				F_norm = -F_norm;
-//			std::cout << "F_norm: " << F_norm << std::endl;
-//
-//			// step 6: svd
-//			Mat E = cam_intrinsic.t() * F_norm * cam_intrinsic;
-//			Mat w_value, u, vt, R90;
-//			SVD::compute(E, w_value, u, vt);
-//			R90 = Mat::zeros(3, 3, CV_64F);
-//			R90.at<double> (0, 1) = -1;
-//			R90.at<double> (1, 0) = 1;
-//			R90.at<double> (2, 2) = 1;
-//
-//			Mat tmp_R[4] = { u * R90 * vt, u * R90.t() * vt, -u * R90 * vt, -u
-//					* R90.t() * vt };
-//			Mat R1, R2;
-//			std::vector<int> tmp_R_array;
-//			for (int ii = 0; ii < 4; ii++) {
-//				float tmp_det = determinant(tmp_R[ii]);
-//				if (tmp_det == 1.0) {
-//					tmp_R_array.push_back(ii);
-//				}
-//			}
-//			R1 = tmp_R[tmp_R_array[0]];
-//			R2 = tmp_R[tmp_R_array[1]];
-//
-//			Mat t1 = u.col(2);
-//			Mat t2 = -u.col(2);
-//
-//			// step 7: compute R-t, rescale t
-//
-//
-//			std::vector<Mat> rt;
-//			Mat rt_test = Mat::zeros(4, 4, CV_64F);
-//			for (int i = 0; i < 4; i++) {
-//				Mat tmp = Mat::zeros(4, 4, CV_64F);
-//				tmp.at<double> (3, 3) = 1;
-//				rt.push_back(tmp);
-//			}
-//			R1.copyTo(rt[0](Rect(0, 0, R1.cols, R1.rows)));
-//			t1.copyTo(rt[0](Rect(3, 0, t1.cols, t1.rows)));
-//			R1.copyTo(rt[1](Rect(0, 0, R1.cols, R1.rows)));
-//			t2.copyTo(rt[1](Rect(3, 0, t2.cols, t2.rows)));
-//			R2.copyTo(rt[2](Rect(0, 0, R2.cols, R2.rows)));
-//			t1.copyTo(rt[2](Rect(3, 0, t1.cols, t1.rows)));
-//			R2.copyTo(rt[3](Rect(0, 0, R2.cols, R2.rows)));
-//			t2.copyTo(rt[3](Rect(3, 0, t2.cols, t2.rows)));
-//
-//			// step 8: reconstruct 3d
-//			std::vector<Point3f> features3d_curr, features3d_prev;
-//			reconstruct3d(good_prev, features3d_prev, cam_intrinsic);
-//			reconstruct3d(good_curr, features3d_curr, cam_intrinsic);
-//
-//			// step 9: select r-t pair
-//			std::vector<double> percent_array;
-//			for (int i = 0; i < 4; i++) {
-//				std::cout << "rt " << i << ": " << rt[i] << std::endl;
-//				percent_array.push_back(computePercentPositive(features3d_prev,
-//						features3d_curr, rt[i]));
-//				std::cout << "percent: " << percent_array[i] << std::endl;
-//			}
 
 		} catch (...) {
 		}
