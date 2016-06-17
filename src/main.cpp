@@ -10,6 +10,7 @@
 #include "opencv2/highgui.hpp"
 #include "opencv2/calib3d.hpp"
 #include "opencv2/xfeatures2d.hpp"
+#include <opencv2/viz.hpp>
 
 using namespace cv;
 
@@ -56,7 +57,7 @@ double computePercentPositive(std::vector<Point3f>& features3d_prev,
 
 	int count = 0;
 	for (int i = 0; i < size; i++) {
-		if(features3d_n_prev[i].z > 0 && features3d_n_curr[i].z > 0)
+		if (features3d_n_prev[i].z > 0 && features3d_n_curr[i].z > 0)
 			count++;
 	}
 
@@ -65,8 +66,6 @@ double computePercentPositive(std::vector<Point3f>& features3d_prev,
 }
 
 int main(int argc, char** argv) {
-
-	namedWindow("Features", 1);
 
 	// load camera intrinsic matrix
 	Mat cam_intrinsic, cam_distortion;
@@ -90,7 +89,16 @@ int main(int argc, char** argv) {
 	Ptr<xfeatures2d::SURF> extractor = xfeatures2d::SURF::create();
 	FlannBasedMatcher matcher;
 
-	for (int img_i = 1; img_i < 10; img_i++) {
+	// rotation & translation arrays
+	std::vector<Mat> R_vec, t_vec;
+
+	Mat R, t, P1, P2, R1, R2, Q;
+	std::vector<Vec3f> point_cloud_est;
+//	std::vector<float>
+
+	clock_t c_begin = clock();
+
+	for (int img_i = 1; img_i < 3; img_i++) {
 		std::stringstream ss;
 		ss << "trans_img/s" << img_i << ".jpg";
 		std::cout << "current idx: " << ss.str() << std::endl;
@@ -105,6 +113,7 @@ int main(int argc, char** argv) {
 			drawKeypoints(img_prev, keypoints_prev, img_keypoints_prev,
 					Scalar::all(-1), DrawMatchesFlags::DEFAULT);
 			//			imwrite("output/img/s0.jpg", img_keypoints_prev);
+			continue;
 		}
 
 		clock_t c_feature, c_extractor, c_match, c_homo;
@@ -151,7 +160,7 @@ int main(int argc, char** argv) {
 
 		std::vector<Point2f> good_curr, good_prev;
 
-		for (int i = 0; i < good_matches.size(); i++) {
+		for (size_t i = 0; i < good_matches.size(); i++) {
 			//-- Get the keypoints from the good matches
 			Point2f kp_curr = keypoints_curr[good_matches[i].queryIdx].pt;
 			Point2f kp_prev = keypoints_prev[good_matches[i].trainIdx].pt;
@@ -162,32 +171,88 @@ int main(int argc, char** argv) {
 		Mat img_keypoints_curr;
 		drawKeypoints(img_curr, keypoints_curr, img_keypoints_curr,
 				Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-		imshow("Features", img_keypoints_curr);
+		//		imshow("Features", img_keypoints_curr);
 		std::string output = "output/";
 		output += ss.str();
 
 		try {
-			Mat E = findEssentialMat(good_prev, good_curr, cam_intrinsic.at<double>(0, 0),
-					Point2f(cam_intrinsic.at<double>(0, 2), cam_intrinsic.at<double>(1, 2)));
-			Mat R, t;
-			recoverPose(E, good_prev, good_curr, R, t, cam_intrinsic.at<double>(0, 0),
-					Point2f(cam_intrinsic.at<double>(0, 2), cam_intrinsic.at<double>(1, 2)));
+			Mat E = findEssentialMat(
+					good_prev,
+					good_curr,
+					cam_intrinsic.at<double> (0, 0),
+					Point2f(cam_intrinsic.at<double> (0, 2),
+							cam_intrinsic.at<double> (1, 2)));
+
+			recoverPose(
+					E,
+					good_prev,
+					good_curr,
+					R,
+					t,
+					cam_intrinsic.at<double> (0, 0),
+					Point2f(cam_intrinsic.at<double> (0, 2),
+							cam_intrinsic.at<double> (1, 2)));
+
+			R_vec.push_back(R);
+			t_vec.push_back(t);
+
+			Mat point4d_homo;
+			stereoRectify(cam_intrinsic, cam_distortion, cam_intrinsic,
+					cam_distortion, Size(800, 600), R, t, R1, R2, P1, P2, Q);
+			triangulatePoints(P1, P2, good_prev, good_curr, point4d_homo);
+
+			for (int i = 0; i < point4d_homo.cols; i++) {
+				float z_index = point4d_homo.at<float>(3, i);
+				point_cloud_est.push_back(Vec3f(point4d_homo.at<float>(0, i) / z_index,
+						point4d_homo.at<float>(1, i) / z_index,
+						point4d_homo.at<float>(2, i) / z_index));
+			}
+
 			std::cout << "R: " << R << std::endl;
 			std::cout << "t: " << t << std::endl;
 
 		} catch (...) {
 		}
 
-		printf("Total time: %f seconds\n\n\n\n\n",
+		printf("Total time: %f seconds\n",
 				(float) (clock() - c_feature) / CLOCKS_PER_SEC);
 
 		// update all prev parameters
 		keypoints_prev = keypoints_curr;
 		descriptors_curr.copyTo(descriptors_prev);
 
-		if (waitKey(30) >= 0)
-			break;
+		//		if (waitKey(30) >= 0)
+		//			break;
 	}
+
+	viz::Viz3d window("Coordinate Frame");
+	window.setWindowSize(Size(500, 500));
+	window.setWindowPosition(Point(150, 150));
+	window.setBackgroundColor(); // black by default
+
+	std::vector<Affine3d> path;
+	for (size_t i = 0; i < R_vec.size(); i++) {
+		path.push_back(Affine3d(R_vec[i], t_vec[i]));
+	}
+
+	Matx33d K = Matx33d(cam_intrinsic.at<double> (0, 0), 0,
+			cam_intrinsic.at<double> (0, 2), 0,
+			cam_intrinsic.at<double> (0, 0), cam_intrinsic.at<double> (1, 2),
+			0, 0, 1);
+
+	viz::WCloud cloud_widget(point_cloud_est, viz::Color::green());
+	window.showWidget("point_cloud", cloud_widget);
+	window.showWidget("cameras_frames_and_lines",
+			viz::WTrajectory(path, viz::WTrajectory::BOTH, 0.1,
+					viz::Color::green()));
+	window.showWidget("cameras_frustums",
+			viz::WTrajectoryFrustums(path, K, 0.1, viz::Color::yellow()));
+	window.setViewerPose(path[0]);
+
+	std::cout << "Total: " << (float) (clock() - c_begin) / CLOCKS_PER_SEC
+			<< std::endl;
+
+	window.spin();
 
 	return 0;
 }

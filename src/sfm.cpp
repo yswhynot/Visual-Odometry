@@ -96,8 +96,7 @@
 //	}
 //	if (path.size() > 0) {
 //		cout << "Rendering Cameras  ... ";
-//		window.showWidget(
-//				"cameras_frames_and_lines",
+//		window.showWidget("cameras_frames_and_lines",
 //				viz::WTrajectory(path, viz::WTrajectory::BOTH, 0.1,
 //						viz::Color::green()));
 //		window.showWidget("cameras_frustums",
