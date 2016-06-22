@@ -3,6 +3,7 @@
 #include <fstream>
 #include <time.h>
 #include <string>
+
 #include "opencv2/opencv.hpp"
 #include "opencv2/core.hpp"
 #include "opencv2/imgcodecs.hpp"
@@ -10,62 +11,117 @@
 #include "opencv2/highgui.hpp"
 #include "opencv2/calib3d.hpp"
 #include "opencv2/xfeatures2d.hpp"
-#include <opencv2/viz.hpp>
+#include "opencv2/viz.hpp"
+
+#include "cvsba/cvsba.h"
 
 using namespace cv;
+using namespace std;
 
 const int IMG_WIDTH = 800;
 const int IMG_HEIGHT = 600;
+const int BUNDLE_WINDOW = 4; // should be larger than 3
 
 void readme();
 
-void normalizeFeatures(std::vector<Point2f>& features, Mat& norm_t) {
-	norm_t = Mat::eye(3, 3, CV_64F);
-	norm_t.at<double> (0, 0) = 1 / (double) IMG_WIDTH * 2;
-	norm_t.at<double> (1, 1) = 1 / (double) IMG_HEIGHT * 2;
-	norm_t.at<double> (0, 2) = -0.5;
-	norm_t.at<double> (1, 2) = -0.5;
+struct MatchImgPair {
+	vector<Point2d> features_prev;
+	vector<Point2d> features_curr;
+	vector<Point3d> points_3d;
+	Mat R;
+	Mat t;
+	unsigned int match_pair_num;
+};
 
-	perspectiveTransform(features, features, norm_t);
+void constructProjectionMat(Mat& P1, Mat& P2, Mat& cam_intrinsic,
+		vector<Affine3d>& path, vector<Affine3d>& path_est, int img_i) {
+	P1 = Mat::eye(4, 4, CV_64F);
+	P2 = Mat::eye(4, 4, CV_64F);
+
+	if (img_i > BUNDLE_WINDOW) {
+		for (int i = 0; i < img_i - BUNDLE_WINDOW + 1; i++) {
+			vector<Mat> pathi;
+			split(path[i].matrix, pathi);
+			cout << "In Bundle 1, path " << i << ": " << pathi[0] << endl;
+			P1 = pathi[0] * P1;
+			P2 = pathi[0] * P2;
+		}
+		for (int i = img_i - BUNDLE_WINDOW + 1; i < img_i; i++) {
+			vector<Mat> pathi;
+			split(path_est[i].matrix, pathi);
+			cout << "In Bundle 2, path " << i << ": " << pathi[0] << endl;
+			P1 = pathi[0] * P1;
+			P2 = pathi[0] * P2;
+		}
+	} else {
+		for (int i = 0; i < img_i; i++) {
+			vector<Mat> pathi;
+			split(path_est[i].matrix, pathi);
+			cout << "Not in Bundle, path " << i << ": " << pathi[0] << endl;
+			P1 = pathi[0] * P1;
+			P2 = pathi[0] * P2;
+		}
+	}
+	P1.pop_back(1);
+	P1 = cam_intrinsic * P1;
+	vector<Mat> pathi;
+	split(path_est[img_i].matrix, pathi);
+	P2 = pathi[0] * P2;
+	P2.pop_back(1);
+	P2 = cam_intrinsic * P2;
+	cout << "P1: " << P1 << endl << "P2: " << P2 << endl;
 }
 
-void reconstruct3d(std::vector<Point2f>& match_keypoints,
-		std::vector<Point3f>& features3d, Mat& cam_intrinsic) {
-	std::vector<Point3f> features2d;
-	for (unsigned int i = 0; i < match_keypoints.size(); i++) {
-		Point3f tmp_p;
-		tmp_p.x = match_keypoints[i].x;
-		tmp_p.y = match_keypoints[i].y;
-		tmp_p.z = 1;
-		features2d.push_back(tmp_p);
-	}
+void computeVisibilityImgArray(int win_start,
+		vector<MatchImgPair>& match_array, vector<vector<int> >& visib_array,
+		vector<vector<Point2d> >& image_points) {
+	// compute for the 3d points of the first pair of imgs
+	// features all visible for the first pair
+	vector<int> visible;
+	vector<Point2d> image;
+	visible.assign(match_array[win_start].match_pair_num, 1);
+	visib_array.push_back(visible);
+	image_points.push_back(match_array[win_start].features_prev);
+	visib_array.push_back(visible);
+	image_points.push_back(match_array[win_start].features_curr);
+	visible.clear();
 
-	Mat cam_trans_3d = Mat::zeros(4, 4, CV_64F);
-	Mat cam_inv = cam_intrinsic.inv();
-	cam_inv.copyTo(cam_trans_3d(Rect(0, 0, cam_inv.cols, cam_inv.rows)));
-	cam_trans_3d.at<double> (3, 3) = 1;
+	for (int i = 1; i < BUNDLE_WINDOW - 1; i++) {
+		for (size_t j = 0; j < match_array[win_start].match_pair_num; j++) {
+			vector<Point2d> prev_match = match_array[i - 1].features_curr;
+			vector<Point2d> curr_match = match_array[i].features_prev;
+			// if feature point exist in prev(i), calculate curr(i+1)
+			int index = -1;
+			if (visib_array[i][j] == 1) {
+				// find corresponding feature point of prev in curr
+				for (size_t k = 0; k < match_array[i].match_pair_num; k++) {
+					if (prev_match[j] == curr_match[k]) {
+						index = k;
+						break;
+					} // end if
+				} // end for k
+			} // end if
 
-	perspectiveTransform(features2d, features3d, cam_trans_3d);
-}
+			// if prev feature point exists
+			if (index != -1) {
+				visible.push_back(1);
+				image.push_back(match_array[i].features_curr[index]);
+			} else {
+				visible.push_back(0);
+				image.push_back(Point2d(0, 0));
+			}
 
-double computePercentPositive(std::vector<Point3f>& features3d_prev,
-		std::vector<Point3f>& features3d_curr, Mat& rt) {
-	int size = features3d_prev.size();
-	std::vector<Point3f> features3d_n_prev, features3d_n_curr;
-	perspectiveTransform(features3d_prev, features3d_n_prev, rt);
-	perspectiveTransform(features3d_curr, features3d_n_curr, rt);
+		} // end for j
 
-	int count = 0;
-	for (int i = 0; i < size; i++) {
-		if (features3d_n_prev[i].z > 0 && features3d_n_curr[i].z > 0)
-			count++;
-	}
-
-	return (double) count / (double) size;
-
+		visib_array.push_back(visible);
+		image_points.push_back(image);
+		visible.clear();
+		image.clear();
+	} // end for i
 }
 
 int main(int argc, char** argv) {
+	namedWindow("Features", 1);
 
 	// load camera intrinsic matrix
 	Mat cam_intrinsic, cam_distortion;
@@ -77,35 +133,50 @@ int main(int argc, char** argv) {
 	cam_distortion.convertTo(cam_distortion, CV_64F);
 
 	Mat img_curr_origin, img_curr, img_prev_origin, img_prev;
-	img_prev_origin = imread("trans_img/s0.jpg", CV_BGR2GRAY);
+	img_prev_origin = imread("conti_img/s0.jpg", CV_BGR2GRAY);
 
 	// init the prev variables
-	std::vector<KeyPoint> keypoints_prev;
-	std::vector<Point2f> good_prev;
+	vector<KeyPoint> keypoints_prev;
+	vector<MatchImgPair> match_array;
 	Mat descriptors_prev;
+	vector<Point2f> good_prev;
 
 	// init detection and extraction container
-	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(50);
+	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(15);
 	Ptr<xfeatures2d::SURF> extractor = xfeatures2d::SURF::create();
 	FlannBasedMatcher matcher;
 
 	// rotation & translation arrays
-	std::vector<Mat> R_vec, t_vec;
+	vector<Mat> R_vec, t_vec;
+	vector<Affine3d> path;
+	vector<Affine3d> path_est;
 
 	Mat R, t, P1, P2, R1, R2, Q;
-	std::vector<Vec3f> point_cloud_est;
-//	std::vector<float>
+	vector<Vec3f> point_cloud_est;
+
+	// init sba and set params
+	// run sba optimization
+	cvsba::Sba sba;
+	// change params if desired
+	cvsba::Sba::Params params;
+	params.type = cvsba::Sba::MOTIONSTRUCTURE;
+	params.iterations = 150;
+	params.minError = 1e-10;
+	params.fixedIntrinsics = 5;
+	params.fixedDistortion = 5;
+	params.verbose = true;
+	sba.setParams(params);
 
 	clock_t c_begin = clock();
 
-	for (int img_i = 1; img_i < 3; img_i++) {
-		std::stringstream ss;
-		ss << "trans_img/s" << img_i << ".jpg";
-		std::cout << "current idx: " << ss.str() << std::endl;
+	for (int img_i = 0; img_i < 30; img_i++) {
+		stringstream ss;
+		ss << "conti_img/s" << img_i << ".jpg";
+		cout << "current idx: " << ss.str() << endl;
 		img_curr_origin = imread(ss.str(), CV_BGR2GRAY);
 
 		// init the img_prev parameters
-		if (img_i == 1) {
+		if (keypoints_prev.size() == 0) {
 			undistort(img_prev_origin, img_prev, cam_intrinsic, cam_distortion);
 			detector->detect(img_prev, keypoints_prev);
 			extractor->compute(img_prev, keypoints_prev, descriptors_prev);
@@ -113,34 +184,46 @@ int main(int argc, char** argv) {
 			drawKeypoints(img_prev, keypoints_prev, img_keypoints_prev,
 					Scalar::all(-1), DrawMatchesFlags::DEFAULT);
 			//			imwrite("output/img/s0.jpg", img_keypoints_prev);
+
+			R = Mat::eye(3, 3, CV_64F);
+			t = Mat::zeros(3, 1, CV_64F);
+			R_vec.push_back(R);
+			t_vec.push_back(t);
+			path_est.push_back(Affine3d(R, t));
+			path.push_back(Affine3d(R, t));
+
 			continue;
 		}
 
 		clock_t c_feature, c_extractor, c_match, c_homo;
+
+		// init params
+		MatchImgPair match_img_pair;
+		vector<KeyPoint> keypoints_curr;
+		Mat descriptors_curr;
+		vector<DMatch> matches;
+		vector<DMatch> good_matches_curr;
+		vector<Point2f> good_prev, good_curr;
+		Mat img_keypoints_curr;
 
 		// step 0: undistorted img
 		undistort(img_curr_origin, img_curr, cam_intrinsic, cam_distortion);
 
 		// step 1: detect features
 		c_feature = clock();
-		std::vector<KeyPoint> keypoints_curr;
 		detector->detect(img_curr, keypoints_curr);
 		printf("Feature Detection time: %f seconds\n",
 				(float) (clock() - c_feature) / CLOCKS_PER_SEC);
 
 		// step 2: descriptor
 		c_extractor = clock();
-		Mat descriptors_curr;
 		extractor->compute(img_curr, keypoints_curr, descriptors_curr);
-
 		printf("Descriptor Extraction time: %f seconds\n",
 				(float) (clock() - c_extractor) / CLOCKS_PER_SEC);
 
 		// step 3: FLANN matcher
 		c_match = clock();
-		std::vector<DMatch> matches;
 		matcher.match(descriptors_curr, descriptors_prev, matches);
-
 		printf("Match time: %f seconds\n",
 				(float) (clock() - c_match) / CLOCKS_PER_SEC);
 
@@ -152,64 +235,123 @@ int main(int argc, char** argv) {
 				min_dis = matches[i].distance;
 		}
 
-		std::vector<DMatch> good_matches;
 		for (int i = 0; i < descriptors_curr.rows; i++) {
 			if (matches[i].distance < 3 * min_dis)
-				good_matches.push_back(matches[i]);
+				good_matches_curr.push_back(matches[i]);
 		}
 
-		std::vector<Point2f> good_curr, good_prev;
+		for (size_t i = 0; i < good_matches_curr.size(); i++) {
+			// Get the keypoints from the good matches
+			Point2f kp_curr = keypoints_curr[good_matches_curr[i].queryIdx].pt;
+			Point2f kp_prev = keypoints_prev[good_matches_curr[i].trainIdx].pt;
 
-		for (size_t i = 0; i < good_matches.size(); i++) {
-			//-- Get the keypoints from the good matches
-			Point2f kp_curr = keypoints_curr[good_matches[i].queryIdx].pt;
-			Point2f kp_prev = keypoints_prev[good_matches[i].trainIdx].pt;
 			good_curr.push_back(kp_curr);
 			good_prev.push_back(kp_prev);
-		}
 
-		Mat img_keypoints_curr;
+			match_img_pair.features_prev.push_back(kp_prev);
+			match_img_pair.features_curr.push_back(kp_curr);
+		}
+		match_img_pair.match_pair_num = good_matches_curr.size();
+
 		drawKeypoints(img_curr, keypoints_curr, img_keypoints_curr,
 				Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-		//		imshow("Features", img_keypoints_curr);
-		std::string output = "output/";
+		imshow("Features", img_keypoints_curr);
+		string output = "output/";
 		output += ss.str();
+		imwrite(output, img_keypoints_curr);
 
 		try {
-			Mat E = findEssentialMat(
-					good_prev,
-					good_curr,
-					cam_intrinsic.at<double> (0, 0),
-					Point2f(cam_intrinsic.at<double> (0, 2),
-							cam_intrinsic.at<double> (1, 2)));
+			// step 4: get essential mat
+			Mat E, mask;
+			Point2d pp(cam_intrinsic.at<double> (0, 2),
+					cam_intrinsic.at<double> (1, 2));
+			E = findEssentialMat(good_prev, good_curr,
+					cam_intrinsic.at<double> (0, 0), pp, RANSAC, 0.999, 1.0,
+					mask);
 
-			recoverPose(
-					E,
-					good_prev,
-					good_curr,
-					R,
-					t,
-					cam_intrinsic.at<double> (0, 0),
-					Point2f(cam_intrinsic.at<double> (0, 2),
-							cam_intrinsic.at<double> (1, 2)));
+			Mat F = findFundamentalMat(good_prev, good_curr);
 
-			R_vec.push_back(R);
-			t_vec.push_back(t);
+			// step 5: get R and t
+			recoverPose(E, good_prev, good_curr, R, t,
+					cam_intrinsic.at<double> (0, 0), pp);
 
-			Mat point4d_homo;
-			stereoRectify(cam_intrinsic, cam_distortion, cam_intrinsic,
-					cam_distortion, Size(800, 600), R, t, R1, R2, P1, P2, Q);
+			R.copyTo(match_img_pair.R);
+			t.copyTo(match_img_pair.t);
+
+			//			R_vec.push_back(R);
+			//			t_vec.push_back(t);
+			//			path.push_back(Affine3d(R, t));
+			cout << "R: " << R << endl;
+			cout << "t: " << t << endl;
+			path_est.push_back(Affine3d(R, t));
+
+			// step 6: get 3d position
+			Mat point4d_homo, P1, P2;
+			constructProjectionMat(P1, P2, cam_intrinsic, path, path_est, img_i);
 			triangulatePoints(P1, P2, good_prev, good_curr, point4d_homo);
 
 			for (int i = 0; i < point4d_homo.cols; i++) {
-				float z_index = point4d_homo.at<float>(3, i);
-				point_cloud_est.push_back(Vec3f(point4d_homo.at<float>(0, i) / z_index,
-						point4d_homo.at<float>(1, i) / z_index,
-						point4d_homo.at<float>(2, i) / z_index));
-			}
+				float z_index = point4d_homo.at<float> (3, i);
+				Point3f tmp_3d_point;
+				tmp_3d_point.x = point4d_homo.at<float> (0, i) / z_index;
+				tmp_3d_point.y = point4d_homo.at<float> (1, i) / z_index;
+				tmp_3d_point.z = point4d_homo.at<float> (2, i) / z_index;
+				match_img_pair.points_3d.push_back(tmp_3d_point);
 
-			std::cout << "R: " << R << std::endl;
-			std::cout << "t: " << t << std::endl;
+				//				Vec3f tmp_vec3 = Vec3f(point4d_homo.at<float> (0, i) / z_index,
+				//						point4d_homo.at<float> (1, i) / z_index,
+				//						point4d_homo.at<float> (2, i) / z_index);
+				//				point_cloud_est.push_back(tmp_vec3);
+			}
+			match_array.push_back(match_img_pair);
+
+			// step 7: bundle adjustment with window BUNDLE_WINDOW
+			if (img_i >= (BUNDLE_WINDOW - 1)) {
+				int win_start = img_i - BUNDLE_WINDOW + 1;
+
+				// select window size R-t pair
+				vector<Mat> R_w, t_w, cam_int_w, cam_dis_w;
+				Mat R_rod;
+
+				for (int w = win_start; w < win_start + BUNDLE_WINDOW; w++) {
+					R_w.push_back(match_array[w].R);
+					t_w.push_back(match_array[w].t);
+					cam_int_w.push_back(cam_intrinsic);
+					cam_dis_w.push_back(cam_distortion);
+				}
+
+				vector<vector<int> > visib_array;
+				vector<vector<Point2d> > image_points;
+				computeVisibilityImgArray(win_start, match_array, visib_array,
+						image_points);
+				cout << "visib_array:" << visib_array.size() << endl
+						<< "img_points: " << image_points.size() << endl;
+				sba.run(match_array[win_start].points_3d, image_points,
+						visib_array, cam_int_w, R_w, t_w, cam_dis_w);
+
+				// print result
+				for (int i = 0; i < BUNDLE_WINDOW; i++) {
+					cout << "Bundle result " << i << endl;
+					cout << "R: " << R_w[i] << endl << "t: " << t_w[i] << endl;
+				}
+
+				cout << "Optimization. Initial error="
+						<< sba.getInitialReprjError() << " and Final error="
+						<< sba.getFinalReprjError() << endl;
+
+				// step 8: recover R-t and point cloud
+				for (int i = 0; i < BUNDLE_WINDOW; i++) {
+					R_vec.push_back(R_w[i]);
+					t_vec.push_back(t_w[i]);
+					path.push_back(Affine3d(R_w[i], t_w[i]));
+				}
+				// push back point cloud
+				for (size_t i = 0; i < match_array[win_start].points_3d.size(); i++) {
+					Point3d tmpp = match_array[win_start].points_3d[i];
+					point_cloud_est.push_back(Vec3f(tmpp.x, tmpp.y, tmpp.z));
+				}
+
+			}
 
 		} catch (...) {
 		}
@@ -221,36 +363,45 @@ int main(int argc, char** argv) {
 		keypoints_prev = keypoints_curr;
 		descriptors_curr.copyTo(descriptors_prev);
 
-		//		if (waitKey(30) >= 0)
-		//			break;
+		if (waitKey(30) >= 0)
+			break;
 	}
 
 	viz::Viz3d window("Coordinate Frame");
 	window.setWindowSize(Size(500, 500));
-	window.setWindowPosition(Point(150, 150));
+	window.setWindowPosition(Point(200, 200));
 	window.setBackgroundColor(); // black by default
-
-	std::vector<Affine3d> path;
-	for (size_t i = 0; i < R_vec.size(); i++) {
-		path.push_back(Affine3d(R_vec[i], t_vec[i]));
-	}
 
 	Matx33d K = Matx33d(cam_intrinsic.at<double> (0, 0), 0,
 			cam_intrinsic.at<double> (0, 2), 0,
 			cam_intrinsic.at<double> (0, 0), cam_intrinsic.at<double> (1, 2),
 			0, 0, 1);
 
-	viz::WCloud cloud_widget(point_cloud_est, viz::Color::green());
-	window.showWidget("point_cloud", cloud_widget);
-	window.showWidget("cameras_frames_and_lines",
-			viz::WTrajectory(path, viz::WTrajectory::BOTH, 0.1,
-					viz::Color::green()));
-	window.showWidget("cameras_frustums",
-			viz::WTrajectoryFrustums(path, K, 0.1, viz::Color::yellow()));
-	window.setViewerPose(path[0]);
+	if (point_cloud_est.size() > 0) {
+		cout << "Rendering points   ... ";
+		viz::WCloud cloud_widget(point_cloud_est, viz::Color::green());
+		window.showWidget("point_cloud", cloud_widget);
+		cout << "[DONE]" << endl;
+	} else {
+		cout << "Cannot render points: Empty pointcloud" << endl;
+	}
 
-	std::cout << "Total: " << (float) (clock() - c_begin) / CLOCKS_PER_SEC
-			<< std::endl;
+	if (path.size() > 0) {
+		cout << "Rendering Cameras  ... ";
+		window.showWidget(
+				"cameras_frames_and_lines",
+				viz::WTrajectory(path, viz::WTrajectory::BOTH, 0.1,
+						viz::Color::green()));
+
+		window.showWidget("cameras_frustums",
+				viz::WTrajectoryFrustums(path, K, 0.1, viz::Color::yellow()));
+		window.setViewerPose(path[0]);
+		cout << "[DONE]" << endl;
+	} else {
+		cout << "Cannot render the cameras: Empty path" << endl;
+	}
+
+	cout << "Total: " << (float) (clock() - c_begin) / CLOCKS_PER_SEC << endl;
 
 	window.spin();
 
@@ -259,5 +410,5 @@ int main(int argc, char** argv) {
 
 /** @function readme */
 void readme() {
-	std::cout << " Usage: ./SURF_detector <img1> <img2>" << std::endl;
+	cout << " Usage: ./SURF_detector <img1> <img2>" << endl;
 }
