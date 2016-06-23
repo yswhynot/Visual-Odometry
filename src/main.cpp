@@ -20,7 +20,7 @@ using namespace std;
 
 const int IMG_WIDTH = 800;
 const int IMG_HEIGHT = 600;
-const int BUNDLE_WINDOW = 4; // should be larger than 3
+const int BUNDLE_WINDOW = 5; // should be larger than 3
 
 void readme();
 
@@ -38,18 +38,18 @@ void constructProjectionMat(Mat& P1, Mat& P2, Mat& cam_intrinsic,
 	P1 = Mat::eye(4, 4, CV_64F);
 	P2 = Mat::eye(4, 4, CV_64F);
 
-	if (img_i > BUNDLE_WINDOW) {
-		for (int i = 0; i < img_i - BUNDLE_WINDOW + 1; i++) {
+	if (img_i >= BUNDLE_WINDOW) {
+		for (int i = 0; i < img_i - BUNDLE_WINDOW + 2; i++) {
 			vector<Mat> pathi;
 			split(path[i].matrix, pathi);
-			cout << "In Bundle 1, path " << i << ": " << pathi[0] << endl;
+//			cout << "In Bundle 1, path " << i << ": " << pathi[0] << endl;
 			P1 = pathi[0] * P1;
 			P2 = pathi[0] * P2;
 		}
-		for (int i = img_i - BUNDLE_WINDOW + 1; i < img_i; i++) {
+		for (int i = img_i - BUNDLE_WINDOW + 2; i <= img_i; i++) {
 			vector<Mat> pathi;
 			split(path_est[i].matrix, pathi);
-			cout << "In Bundle 2, path " << i << ": " << pathi[0] << endl;
+//			cout << "In Bundle 2, path " << i << ": " << pathi[0] << endl;
 			P1 = pathi[0] * P1;
 			P2 = pathi[0] * P2;
 		}
@@ -57,7 +57,7 @@ void constructProjectionMat(Mat& P1, Mat& P2, Mat& cam_intrinsic,
 		for (int i = 0; i < img_i; i++) {
 			vector<Mat> pathi;
 			split(path_est[i].matrix, pathi);
-			cout << "Not in Bundle, path " << i << ": " << pathi[0] << endl;
+//			cout << "Not in Bundle, path " << i << ": " << pathi[0] << endl;
 			P1 = pathi[0] * P1;
 			P2 = pathi[0] * P2;
 		}
@@ -81,20 +81,24 @@ void computeVisibilityImgArray(int win_start,
 	vector<Point2d> image;
 	visible.assign(match_array[win_start].match_pair_num, 1);
 	visib_array.push_back(visible);
-	image_points.push_back(match_array[win_start].features_prev);
-	visib_array.push_back(visible);
 	image_points.push_back(match_array[win_start].features_curr);
 	visible.clear();
 
 	for (int i = 1; i < BUNDLE_WINDOW - 1; i++) {
+
+		int position = win_start + i;
+		vector<Point2d> prev_match = match_array[position - 1].features_curr;
+		vector<Point2d> curr_match = match_array[position].features_prev;
+
+		int count_n = 0;
+
 		for (size_t j = 0; j < match_array[win_start].match_pair_num; j++) {
-			vector<Point2d> prev_match = match_array[i - 1].features_curr;
-			vector<Point2d> curr_match = match_array[i].features_prev;
+
 			// if feature point exist in prev(i), calculate curr(i+1)
 			int index = -1;
-			if (visib_array[i][j] == 1) {
+			if (visib_array[i - 1][j] == 1) {
 				// find corresponding feature point of prev in curr
-				for (size_t k = 0; k < match_array[i].match_pair_num; k++) {
+				for (size_t k = 0; k < match_array[position].match_pair_num; k++) {
 					if (prev_match[j] == curr_match[k]) {
 						index = k;
 						break;
@@ -105,7 +109,8 @@ void computeVisibilityImgArray(int win_start,
 			// if prev feature point exists
 			if (index != -1) {
 				visible.push_back(1);
-				image.push_back(match_array[i].features_curr[index]);
+				image.push_back(match_array[position].features_curr[index]);
+				count_n++;
 			} else {
 				visible.push_back(0);
 				image.push_back(Point2d(0, 0));
@@ -113,11 +118,14 @@ void computeVisibilityImgArray(int win_start,
 
 		} // end for j
 
+		cout << "count " << i << ": " << count_n << endl;
+
 		visib_array.push_back(visible);
 		image_points.push_back(image);
 		visible.clear();
 		image.clear();
 	} // end for i
+
 }
 
 int main(int argc, char** argv) {
@@ -133,7 +141,6 @@ int main(int argc, char** argv) {
 	cam_distortion.convertTo(cam_distortion, CV_64F);
 
 	Mat img_curr_origin, img_curr, img_prev_origin, img_prev;
-	img_prev_origin = imread("conti_img/s0.jpg", CV_BGR2GRAY);
 
 	// init the prev variables
 	vector<KeyPoint> keypoints_prev;
@@ -160,23 +167,24 @@ int main(int argc, char** argv) {
 	// change params if desired
 	cvsba::Sba::Params params;
 	params.type = cvsba::Sba::MOTIONSTRUCTURE;
-	params.iterations = 150;
-	params.minError = 1e-10;
+	params.iterations = 500;
+	params.minError = 1e-20;
 	params.fixedIntrinsics = 5;
 	params.fixedDistortion = 5;
-	params.verbose = true;
+	params.verbose = false;
 	sba.setParams(params);
 
 	clock_t c_begin = clock();
 
-	for (int img_i = 0; img_i < 30; img_i++) {
+	for (int img_i = 0; img_i < 27; img_i++) {
 		stringstream ss;
-		ss << "conti_img/s" << img_i << ".jpg";
+		ss << "trans_img/s" << img_i << ".jpg";
 		cout << "current idx: " << ss.str() << endl;
 		img_curr_origin = imread(ss.str(), CV_BGR2GRAY);
 
 		// init the img_prev parameters
 		if (keypoints_prev.size() == 0) {
+			img_curr_origin.copyTo(img_prev_origin);
 			undistort(img_prev_origin, img_prev, cam_intrinsic, cam_distortion);
 			detector->detect(img_prev, keypoints_prev);
 			extractor->compute(img_prev, keypoints_prev, descriptors_prev);
@@ -313,7 +321,7 @@ int main(int argc, char** argv) {
 				vector<Mat> R_w, t_w, cam_int_w, cam_dis_w;
 				Mat R_rod;
 
-				for (int w = win_start; w < win_start + BUNDLE_WINDOW; w++) {
+				for (int w = win_start; w < win_start + BUNDLE_WINDOW - 1; w++) {
 					R_w.push_back(match_array[w].R);
 					t_w.push_back(match_array[w].t);
 					cam_int_w.push_back(cam_intrinsic);
@@ -326,11 +334,15 @@ int main(int argc, char** argv) {
 						image_points);
 				cout << "visib_array:" << visib_array.size() << endl
 						<< "img_points: " << image_points.size() << endl;
-				sba.run(match_array[win_start].points_3d, image_points,
-						visib_array, cam_int_w, R_w, t_w, cam_dis_w);
+
+				try {
+					sba.run(match_array[win_start].points_3d, image_points,
+							visib_array, cam_int_w, R_w, t_w, cam_dis_w);
+				} catch (...) {
+				}
 
 				// print result
-				for (int i = 0; i < BUNDLE_WINDOW; i++) {
+				for (int i = 0; i < BUNDLE_WINDOW - 1; i++) {
 					cout << "Bundle result " << i << endl;
 					cout << "R: " << R_w[i] << endl << "t: " << t_w[i] << endl;
 				}
@@ -340,14 +352,15 @@ int main(int argc, char** argv) {
 						<< sba.getFinalReprjError() << endl;
 
 				// step 8: recover R-t and point cloud
-				for (int i = 0; i < BUNDLE_WINDOW; i++) {
-					R_vec.push_back(R_w[i]);
-					t_vec.push_back(t_w[i]);
-					path.push_back(Affine3d(R_w[i], t_w[i]));
-				}
+				R_vec.push_back(R_w[1]);
+				t_vec.push_back(t_w[1]);
+				path.push_back(Affine3d(R_w[1], t_w[1]));
+
 				// push back point cloud
 				for (size_t i = 0; i < match_array[win_start].points_3d.size(); i++) {
 					Point3d tmpp = match_array[win_start].points_3d[i];
+					if (tmpp.x > 100 || tmpp.y > 100 || tmpp.z > 100)
+						continue;
 					point_cloud_est.push_back(Vec3f(tmpp.x, tmpp.y, tmpp.z));
 				}
 

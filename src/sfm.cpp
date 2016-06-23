@@ -49,7 +49,7 @@
 //	// Parse the image paths
 //	vector<string> images_paths;
 //	//	getdir(argv[1], images_paths);
-//	for (int i = 0; i < 5; i++) {
+//	for (int i = 0; i < 27; i++) {
 //		std::stringstream ss;
 //		ss << "trans_img/s" << i << ".jpg";
 //		images_paths.push_back(ss.str());
