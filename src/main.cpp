@@ -3,10 +3,12 @@
 #include <fstream>
 #include <time.h>
 #include <string>
+#include <math.h>
 
 #include "opencv2/opencv.hpp"
 #include "opencv2/core.hpp"
 #include "opencv2/imgcodecs.hpp"
+#include "opencv2/videoio.hpp"
 #include "opencv2/features2d.hpp"
 #include "opencv2/highgui.hpp"
 #include "opencv2/calib3d.hpp"
@@ -20,7 +22,8 @@ using namespace std;
 
 const int IMG_WIDTH = 800;
 const int IMG_HEIGHT = 600;
-const int BUNDLE_WINDOW = 5; // should be larger than 3
+const int BUNDLE_WINDOW = 3; // should be larger than 3
+const int JUMP_FRAME = 5;
 
 void readme();
 
@@ -42,14 +45,14 @@ void constructProjectionMat(Mat& P1, Mat& P2, Mat& cam_intrinsic,
 		for (int i = 0; i < img_i - BUNDLE_WINDOW + 2; i++) {
 			vector<Mat> pathi;
 			split(path[i].matrix, pathi);
-//			cout << "In Bundle 1, path " << i << ": " << pathi[0] << endl;
+			//			cout << "In Bundle 1, path " << i << ": " << pathi[0] << endl;
 			P1 = pathi[0] * P1;
 			P2 = pathi[0] * P2;
 		}
 		for (int i = img_i - BUNDLE_WINDOW + 2; i <= img_i; i++) {
 			vector<Mat> pathi;
 			split(path_est[i].matrix, pathi);
-//			cout << "In Bundle 2, path " << i << ": " << pathi[0] << endl;
+			//			cout << "In Bundle 2, path " << i << ": " << pathi[0] << endl;
 			P1 = pathi[0] * P1;
 			P2 = pathi[0] * P2;
 		}
@@ -57,7 +60,7 @@ void constructProjectionMat(Mat& P1, Mat& P2, Mat& cam_intrinsic,
 		for (int i = 0; i < img_i; i++) {
 			vector<Mat> pathi;
 			split(path_est[i].matrix, pathi);
-//			cout << "Not in Bundle, path " << i << ": " << pathi[0] << endl;
+			//			cout << "Not in Bundle, path " << i << ": " << pathi[0] << endl;
 			P1 = pathi[0] * P1;
 			P2 = pathi[0] * P2;
 		}
@@ -72,60 +75,110 @@ void constructProjectionMat(Mat& P1, Mat& P2, Mat& cam_intrinsic,
 	cout << "P1: " << P1 << endl << "P2: " << P2 << endl;
 }
 
-void computeVisibilityImgArray(int win_start,
-		vector<MatchImgPair>& match_array, vector<vector<int> >& visib_array,
+//int computeVisibilityImgArray(int win_start, vector<MatchImgPair>& match_array,
+//		vector<vector<int> >& visib_array,
+//		vector<vector<Point2d> >& image_points) {
+//	// compute for the 3d points of the first pair of imgs
+//	// features all visible for the first pair
+//	vector<int> visible;
+//	vector<Point2d> image;
+//	visible.assign(match_array[win_start].match_pair_num, 1);
+//	visib_array.push_back(visible);
+//	image_points.push_back(match_array[win_start].features_curr);
+//	visible.clear();
+//
+//	for (int i = 1; i < BUNDLE_WINDOW - 1; i++) {
+//
+//		int position = win_start + i;
+//		vector<Point2d> prev_match = match_array[position - 1].features_curr;
+//		vector<Point2d> curr_match = match_array[position].features_prev;
+//
+//		int count_n = 0;
+//
+//		for (size_t j = 0; j < match_array[win_start].match_pair_num; j++) {
+//
+//			// if feature point exist in prev(i), calculate curr(i+1)
+//			int index = -1;
+//			if (visib_array[i - 1][j] == 1) {
+//				// find corresponding feature point of prev in curr
+//				for (size_t k = 0; k < match_array[position].match_pair_num; k++) {
+//					if (prev_match[j] == curr_match[k]) {
+//						index = k;
+//						break;
+//					} // end if
+//				} // end for k
+//			} // end if
+//
+//			// if prev feature point exists
+//			if (index != -1) {
+//				visible.push_back(1);
+//				image.push_back(match_array[position].features_curr[index]);
+//				count_n++;
+//			} else {
+//				visible.push_back(0);
+//				image.push_back(Point2d(0, 0));
+//			}
+//
+//		} // end for j
+//
+//		if (count_n < 8)
+//			return -1;
+//		cout << "count " << i << ": " << count_n << endl;
+//
+//		visib_array.push_back(visible);
+//		image_points.push_back(image);
+//		visible.clear();
+//		image.clear();
+//	} // end for i
+//
+//	return 0;
+//}
+
+int computeVisibilityImgArray(int win_start, vector<MatchImgPair>& match_array,
+		vector<vector<int> >& visib_array,
 		vector<vector<Point2d> >& image_points) {
-	// compute for the 3d points of the first pair of imgs
-	// features all visible for the first pair
-	vector<int> visible;
-	vector<Point2d> image;
-	visible.assign(match_array[win_start].match_pair_num, 1);
-	visib_array.push_back(visible);
-	image_points.push_back(match_array[win_start].features_curr);
-	visible.clear();
+
+	vector<vector<Point3d> > points3d_vec;
+	vector<vector<Point2d> > points2d_vec;
+	vector<vector<int> > prev_index_vec;
+	vector<vector<int> > curr_index_vec;
+	vector<vector<int> > result_vec;
 
 	for (int i = 1; i < BUNDLE_WINDOW - 1; i++) {
-
 		int position = win_start + i;
+		vector<int> prev_vec;
+		vector<int> curr_vec;
+
 		vector<Point2d> prev_match = match_array[position - 1].features_curr;
 		vector<Point2d> curr_match = match_array[position].features_prev;
-
-		int count_n = 0;
-
-		for (size_t j = 0; j < match_array[win_start].match_pair_num; j++) {
-
-			// if feature point exist in prev(i), calculate curr(i+1)
+		for (int j = 0; j < match_array[position].match_pair_num; j++) {
 			int index = -1;
-			if (visib_array[i - 1][j] == 1) {
-				// find corresponding feature point of prev in curr
-				for (size_t k = 0; k < match_array[position].match_pair_num; k++) {
-					if (prev_match[j] == curr_match[k]) {
-						index = k;
-						break;
-					} // end if
-				} // end for k
-			} // end if
+			for (int k = 0; k < match_array[position + 1].match_pair_num; k++) {
+				if (prev_match[j] == curr_match[k]) {
+					index = k;
+					break;
+				}
+			} // end for k
 
-			// if prev feature point exists
-			if (index != -1) {
-				visible.push_back(1);
-				image.push_back(match_array[position].features_curr[index]);
-				count_n++;
-			} else {
-				visible.push_back(0);
-				image.push_back(Point2d(0, 0));
+			if(index != -1) {
+				prev_vec.push_back(j);
+				curr_vec.push_back(k);
 			}
-
 		} // end for j
+		prev_index_vec.push_back(prev_vec);
+		curr_index_vec.push_back(curr_vec);
+	}
 
-		cout << "count " << i << ": " << count_n << endl;
-
-		visib_array.push_back(visible);
-		image_points.push_back(image);
-		visible.clear();
-		image.clear();
-	} // end for i
-
+	// reverse reconstruct all the overlapping points
+	for(int i = 1; i < BUNDLE_WINDOW; i++) {
+		vector<Point2d> vec_2d;
+		vector<Point3d> vec_3d;
+		int p = BUNDLE_WINDOW - i - 1;
+		for(int j = 0; j < curr_index_vec[p].size(); j++) {
+			int index = curr_index_vec[p][j];
+			vec_2d.push_back(Point2d(match_array))
+		}
+	}
 }
 
 int main(int argc, char** argv) {
@@ -149,7 +202,7 @@ int main(int argc, char** argv) {
 	vector<Point2f> good_prev;
 
 	// init detection and extraction container
-	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(15);
+	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(50);
 	Ptr<xfeatures2d::SURF> extractor = xfeatures2d::SURF::create();
 	FlannBasedMatcher matcher;
 
@@ -174,13 +227,25 @@ int main(int argc, char** argv) {
 	params.verbose = false;
 	sba.setParams(params);
 
+	// load video file
+	VideoCapture cap("pure_translation.webm");
+	if (!cap.isOpened()) {
+		cout << "Cannot open file" << endl;
+		return -1;
+	}
+
 	clock_t c_begin = clock();
 
-	for (int img_i = 0; img_i < 27; img_i++) {
-		stringstream ss;
-		ss << "trans_img/s" << img_i << ".jpg";
-		cout << "current idx: " << ss.str() << endl;
-		img_curr_origin = imread(ss.str(), CV_BGR2GRAY);
+	for (int img_i = 0; img_i < 20; img_i++) {
+		Mat frame;
+		for (int i = 0; i < JUMP_FRAME; i++) {
+			cap >> frame;
+		}
+		//		cap >> frame;
+		if (frame.empty())
+			break;
+		cout << "iteration: " << img_i << endl;
+		cvtColor(frame, img_curr_origin, CV_BGR2GRAY);
 
 		// init the img_prev parameters
 		if (keypoints_prev.size() == 0) {
@@ -222,6 +287,7 @@ int main(int argc, char** argv) {
 		detector->detect(img_curr, keypoints_curr);
 		printf("Feature Detection time: %f seconds\n",
 				(float) (clock() - c_feature) / CLOCKS_PER_SEC);
+		cout << "Num of features: " << keypoints_curr.size() << endl;
 
 		// step 2: descriptor
 		c_extractor = clock();
@@ -244,9 +310,11 @@ int main(int argc, char** argv) {
 		}
 
 		for (int i = 0; i < descriptors_curr.rows; i++) {
-			if (matches[i].distance < 3 * min_dis)
+			if (matches[i].distance < 5 * min_dis)
 				good_matches_curr.push_back(matches[i]);
 		}
+
+		cout << "Good matches num: " << good_matches_curr.size() << endl;
 
 		for (size_t i = 0; i < good_matches_curr.size(); i++) {
 			// Get the keypoints from the good matches
@@ -264,9 +332,6 @@ int main(int argc, char** argv) {
 		drawKeypoints(img_curr, keypoints_curr, img_keypoints_curr,
 				Scalar::all(-1), DrawMatchesFlags::DEFAULT);
 		imshow("Features", img_keypoints_curr);
-		string output = "output/";
-		output += ss.str();
-		imwrite(output, img_keypoints_curr);
 
 		try {
 			// step 4: get essential mat
@@ -330,36 +395,49 @@ int main(int argc, char** argv) {
 
 				vector<vector<int> > visib_array;
 				vector<vector<Point2d> > image_points;
-				computeVisibilityImgArray(win_start, match_array, visib_array,
-						image_points);
-				cout << "visib_array:" << visib_array.size() << endl
-						<< "img_points: " << image_points.size() << endl;
 
-				try {
-					sba.run(match_array[win_start].points_3d, image_points,
-							visib_array, cam_int_w, R_w, t_w, cam_dis_w);
-				} catch (...) {
+				// check if there is enough overlapping points
+				if (computeVisibilityImgArray(win_start, match_array,
+						visib_array, image_points) != -1) {
+					cout << "visib_array:" << visib_array.size() << endl
+							<< "img_points: " << image_points.size() << endl;
+
+					try {
+						sba.run(match_array[win_start].points_3d, image_points,
+								visib_array, cam_int_w, R_w, t_w, cam_dis_w);
+
+						// print result
+						cout << "Bundle result " << 0 << endl;
+						cout << "R: " << R_w[0] << endl << "t: " << t_w[0]
+								<< endl;
+
+						cout << "Optimization. Initial error="
+								<< sba.getInitialReprjError()
+								<< " and Final error="
+								<< sba.getFinalReprjError() << endl;
+
+						// step 8: recover R-t and point cloud
+						R_vec.push_back(R_w[0]);
+						t_vec.push_back(t_w[0]);
+						path.push_back(Affine3d(R_w[0], t_w[0]));
+					} catch (...) {
+						R_vec.push_back(R);
+						t_vec.push_back(t);
+						path.push_back(Affine3d(R, t));
+					}
+
+				} else {
+					cout << "Too few overlapping" << endl;
+					R_vec.push_back(R);
+					t_vec.push_back(t);
+					path.push_back(Affine3d(R, t));
 				}
-
-				// print result
-				for (int i = 0; i < BUNDLE_WINDOW - 1; i++) {
-					cout << "Bundle result " << i << endl;
-					cout << "R: " << R_w[i] << endl << "t: " << t_w[i] << endl;
-				}
-
-				cout << "Optimization. Initial error="
-						<< sba.getInitialReprjError() << " and Final error="
-						<< sba.getFinalReprjError() << endl;
-
-				// step 8: recover R-t and point cloud
-				R_vec.push_back(R_w[1]);
-				t_vec.push_back(t_w[1]);
-				path.push_back(Affine3d(R_w[1], t_w[1]));
 
 				// push back point cloud
 				for (size_t i = 0; i < match_array[win_start].points_3d.size(); i++) {
 					Point3d tmpp = match_array[win_start].points_3d[i];
-					if (tmpp.x > 100 || tmpp.y > 100 || tmpp.z > 100)
+					if (abs(tmpp.x) > 1000 || abs(tmpp.y) > 1000 || abs(tmpp.z)
+							> 1000)
 						continue;
 					point_cloud_est.push_back(Vec3f(tmpp.x, tmpp.y, tmpp.z));
 				}
