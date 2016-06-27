@@ -22,8 +22,8 @@ using namespace std;
 
 const int IMG_WIDTH = 800;
 const int IMG_HEIGHT = 600;
-const int BUNDLE_WINDOW = 3; // should be larger than 3
-const int JUMP_FRAME = 5;
+const int BUNDLE_WINDOW = 4; // should be larger than 3
+const int JUMP_FRAME = 3;
 
 void readme();
 
@@ -75,110 +75,64 @@ void constructProjectionMat(Mat& P1, Mat& P2, Mat& cam_intrinsic,
 	cout << "P1: " << P1 << endl << "P2: " << P2 << endl;
 }
 
-//int computeVisibilityImgArray(int win_start, vector<MatchImgPair>& match_array,
-//		vector<vector<int> >& visib_array,
-//		vector<vector<Point2d> >& image_points) {
-//	// compute for the 3d points of the first pair of imgs
-//	// features all visible for the first pair
-//	vector<int> visible;
-//	vector<Point2d> image;
-//	visible.assign(match_array[win_start].match_pair_num, 1);
-//	visib_array.push_back(visible);
-//	image_points.push_back(match_array[win_start].features_curr);
-//	visible.clear();
-//
-//	for (int i = 1; i < BUNDLE_WINDOW - 1; i++) {
-//
-//		int position = win_start + i;
-//		vector<Point2d> prev_match = match_array[position - 1].features_curr;
-//		vector<Point2d> curr_match = match_array[position].features_prev;
-//
-//		int count_n = 0;
-//
-//		for (size_t j = 0; j < match_array[win_start].match_pair_num; j++) {
-//
-//			// if feature point exist in prev(i), calculate curr(i+1)
-//			int index = -1;
-//			if (visib_array[i - 1][j] == 1) {
-//				// find corresponding feature point of prev in curr
-//				for (size_t k = 0; k < match_array[position].match_pair_num; k++) {
-//					if (prev_match[j] == curr_match[k]) {
-//						index = k;
-//						break;
-//					} // end if
-//				} // end for k
-//			} // end if
-//
-//			// if prev feature point exists
-//			if (index != -1) {
-//				visible.push_back(1);
-//				image.push_back(match_array[position].features_curr[index]);
-//				count_n++;
-//			} else {
-//				visible.push_back(0);
-//				image.push_back(Point2d(0, 0));
-//			}
-//
-//		} // end for j
-//
-//		if (count_n < 8)
-//			return -1;
-//		cout << "count " << i << ": " << count_n << endl;
-//
-//		visib_array.push_back(visible);
-//		image_points.push_back(image);
-//		visible.clear();
-//		image.clear();
-//	} // end for i
-//
-//	return 0;
-//}
-
 int computeVisibilityImgArray(int win_start, vector<MatchImgPair>& match_array,
 		vector<vector<int> >& visib_array,
 		vector<vector<Point2d> >& image_points) {
-
-	vector<vector<Point3d> > points3d_vec;
-	vector<vector<Point2d> > points2d_vec;
-	vector<vector<int> > prev_index_vec;
-	vector<vector<int> > curr_index_vec;
-	vector<vector<int> > result_vec;
+	// compute for the 3d points of the first pair of imgs
+	// features all visible for the first pair
+	vector<int> visible;
+	vector<Point2d> image;
+	visible.assign(match_array[win_start].match_pair_num, 1);
+	visib_array.push_back(visible);
+	cout << "count " << 0 << ": " << visible.size() << endl;
+	image_points.push_back(match_array[win_start].features_curr);
+	visible.clear();
 
 	for (int i = 1; i < BUNDLE_WINDOW - 1; i++) {
-		int position = win_start + i;
-		vector<int> prev_vec;
-		vector<int> curr_vec;
 
+		int position = win_start + i;
 		vector<Point2d> prev_match = match_array[position - 1].features_curr;
 		vector<Point2d> curr_match = match_array[position].features_prev;
-		for (int j = 0; j < match_array[position].match_pair_num; j++) {
+
+		int count_n = 0;
+
+		for (size_t j = 0; j < match_array[win_start].match_pair_num; j++) {
+
+			// if feature point exist in prev(i), calculate curr(i+1)
 			int index = -1;
-			for (int k = 0; k < match_array[position + 1].match_pair_num; k++) {
-				if (prev_match[j] == curr_match[k]) {
-					index = k;
-					break;
-				}
-			} // end for k
+			if (visib_array[i - 1][j] == 1) {
+				// find corresponding feature point of prev in curr
+				for (size_t k = 0; k < match_array[position].match_pair_num; k++) {
+					if (prev_match[j] == curr_match[k]) {
+						index = k;
+						break;
+					} // end if
+				} // end for k
+			} // end if
 
-			if(index != -1) {
-				prev_vec.push_back(j);
-				curr_vec.push_back(k);
+			// if prev feature point exists
+			if (index != -1) {
+				visible.push_back(1);
+				image.push_back(match_array[position].features_curr[index]);
+				count_n++;
+			} else {
+				visible.push_back(0);
+				image.push_back(Point2d(0, 0));
 			}
-		} // end for j
-		prev_index_vec.push_back(prev_vec);
-		curr_index_vec.push_back(curr_vec);
-	}
 
-	// reverse reconstruct all the overlapping points
-	for(int i = 1; i < BUNDLE_WINDOW; i++) {
-		vector<Point2d> vec_2d;
-		vector<Point3d> vec_3d;
-		int p = BUNDLE_WINDOW - i - 1;
-		for(int j = 0; j < curr_index_vec[p].size(); j++) {
-			int index = curr_index_vec[p][j];
-			vec_2d.push_back(Point2d(match_array))
-		}
-	}
+		} // end for j
+
+		if (count_n < 8)
+			return -1;
+		cout << "count " << i << ": " << count_n << endl;
+
+		visib_array.push_back(visible);
+		image_points.push_back(image);
+		visible.clear();
+		image.clear();
+	} // end for i
+
+	return 0;
 }
 
 int main(int argc, char** argv) {
@@ -202,8 +156,8 @@ int main(int argc, char** argv) {
 	vector<Point2f> good_prev;
 
 	// init detection and extraction container
-	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(50);
-	Ptr<xfeatures2d::SURF> extractor = xfeatures2d::SURF::create();
+	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(30);
+	Ptr<xfeatures2d::DAISY> extractor = xfeatures2d::DAISY::create();
 	FlannBasedMatcher matcher;
 
 	// rotation & translation arrays
@@ -228,7 +182,7 @@ int main(int argc, char** argv) {
 	sba.setParams(params);
 
 	// load video file
-	VideoCapture cap("pure_translation.webm");
+	VideoCapture cap("pure_translation2.webm");
 	if (!cap.isOpened()) {
 		cout << "Cannot open file" << endl;
 		return -1;
@@ -236,7 +190,7 @@ int main(int argc, char** argv) {
 
 	clock_t c_begin = clock();
 
-	for (int img_i = 0; img_i < 20; img_i++) {
+	for (int img_i = 0; ; img_i++) {
 		Mat frame;
 		for (int i = 0; i < JUMP_FRAME; i++) {
 			cap >> frame;
@@ -256,7 +210,7 @@ int main(int argc, char** argv) {
 			Mat img_keypoints_prev;
 			drawKeypoints(img_prev, keypoints_prev, img_keypoints_prev,
 					Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-			//			imwrite("output/img/s0.jpg", img_keypoints_prev);
+//			imwrite("output/img_f/s0.jpg", img_keypoints_prev);
 
 			R = Mat::eye(3, 3, CV_64F);
 			t = Mat::zeros(3, 1, CV_64F);
@@ -310,7 +264,7 @@ int main(int argc, char** argv) {
 		}
 
 		for (int i = 0; i < descriptors_curr.rows; i++) {
-			if (matches[i].distance < 5 * min_dis)
+			if (matches[i].distance < 3 * min_dis)
 				good_matches_curr.push_back(matches[i]);
 		}
 
@@ -332,6 +286,9 @@ int main(int argc, char** argv) {
 		drawKeypoints(img_curr, keypoints_curr, img_keypoints_curr,
 				Scalar::all(-1), DrawMatchesFlags::DEFAULT);
 		imshow("Features", img_keypoints_curr);
+		stringstream ss;
+		ss << "output/img_f/s" << img_i << ".jpg";
+//		imwrite(ss.str(), img_keypoints_curr);
 
 		try {
 			// step 4: get essential mat
