@@ -24,6 +24,7 @@ const int IMG_WIDTH = 800;
 const int IMG_HEIGHT = 600;
 const int BUNDLE_WINDOW = 4; // should be larger than 3
 const int JUMP_FRAME = 3;
+const float F_RATIO = 0.8;
 
 void readme();
 
@@ -75,34 +76,33 @@ void constructProjectionMat(Mat& P1, Mat& P2, Mat& cam_intrinsic,
 	cout << "P1: " << P1 << endl << "P2: " << P2 << endl;
 }
 
-int computeVisibilityImgArray(int win_start, vector<MatchImgPair>& match_array,
+int computeVisibilityImgArray(vector<MatchImgPair>& match_array,
 		vector<vector<int> >& visib_array,
 		vector<vector<Point2d> >& image_points) {
 	// compute for the 3d points of the first pair of imgs
 	// features all visible for the first pair
 	vector<int> visible;
 	vector<Point2d> image;
-	visible.assign(match_array[win_start].match_pair_num, 1);
+	visible.assign(match_array[0].match_pair_num, 1);
 	visib_array.push_back(visible);
 	cout << "count " << 0 << ": " << visible.size() << endl;
-	image_points.push_back(match_array[win_start].features_curr);
+	image_points.push_back(match_array[0].features_curr);
 	visible.clear();
 
 	for (int i = 1; i < BUNDLE_WINDOW - 1; i++) {
 
-		int position = win_start + i;
-		vector<Point2d> prev_match = match_array[position - 1].features_curr;
-		vector<Point2d> curr_match = match_array[position].features_prev;
+		vector<Point2d> prev_match = match_array[i - 1].features_curr;
+		vector<Point2d> curr_match = match_array[i].features_prev;
 
 		int count_n = 0;
 
-		for (size_t j = 0; j < match_array[win_start].match_pair_num; j++) {
+		for (size_t j = 0; j < match_array[0].match_pair_num; j++) {
 
 			// if feature point exist in prev(i), calculate curr(i+1)
 			int index = -1;
 			if (visib_array[i - 1][j] == 1) {
 				// find corresponding feature point of prev in curr
-				for (size_t k = 0; k < match_array[position].match_pair_num; k++) {
+				for (size_t k = 0; k < match_array[i].match_pair_num; k++) {
 					if (prev_match[j] == curr_match[k]) {
 						index = k;
 						break;
@@ -113,7 +113,7 @@ int computeVisibilityImgArray(int win_start, vector<MatchImgPair>& match_array,
 			// if prev feature point exists
 			if (index != -1) {
 				visible.push_back(1);
-				image.push_back(match_array[position].features_curr[index]);
+				image.push_back(match_array[i].features_curr[index]);
 				count_n++;
 			} else {
 				visible.push_back(0);
@@ -151,12 +151,11 @@ int main(int argc, char** argv) {
 
 	// init the prev variables
 	vector<KeyPoint> keypoints_prev;
-	vector<MatchImgPair> match_array;
 	Mat descriptors_prev;
 	vector<Point2f> good_prev;
 
 	// init detection and extraction container
-	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(30);
+	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create();
 	Ptr<xfeatures2d::DAISY> extractor = xfeatures2d::DAISY::create();
 	FlannBasedMatcher matcher;
 
@@ -167,6 +166,7 @@ int main(int argc, char** argv) {
 
 	Mat R, t, P1, P2, R1, R2, Q;
 	vector<Vec3f> point_cloud_est;
+	Mat frame;
 
 	// init sba and set params
 	// run sba optimization
@@ -188,230 +188,243 @@ int main(int argc, char** argv) {
 		return -1;
 	}
 
-	clock_t c_begin = clock();
+	clock_t c_begin, c_feature, c_extractor, c_match, c_homo;
 
-	for (int img_i = 0; ; img_i++) {
-		Mat frame;
-		for (int i = 0; i < JUMP_FRAME; i++) {
-			cap >> frame;
-		}
-		//		cap >> frame;
-		if (frame.empty())
-			break;
-		cout << "iteration: " << img_i << endl;
-		cvtColor(frame, img_curr_origin, CV_BGR2GRAY);
+	c_begin = clock();
 
-		// init the img_prev parameters
-		if (keypoints_prev.size() == 0) {
-			img_curr_origin.copyTo(img_prev_origin);
-			undistort(img_prev_origin, img_prev, cam_intrinsic, cam_distortion);
-			detector->detect(img_prev, keypoints_prev);
-			extractor->compute(img_prev, keypoints_prev, descriptors_prev);
-			Mat img_keypoints_prev;
-			drawKeypoints(img_prev, keypoints_prev, img_keypoints_prev,
-					Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-//			imwrite("output/img_f/s0.jpg", img_keypoints_prev);
+	for (int img_i = 0; img_i < 25; img_i += (BUNDLE_WINDOW - 1)) {
+		vector<MatchImgPair> match_array;
 
-			R = Mat::eye(3, 3, CV_64F);
-			t = Mat::zeros(3, 1, CV_64F);
-			R_vec.push_back(R);
-			t_vec.push_back(t);
-			path_est.push_back(Affine3d(R, t));
-			path.push_back(Affine3d(R, t));
+		for (int bundle_i = 0; bundle_i < BUNDLE_WINDOW; bundle_i++) {
 
-			continue;
-		}
-
-		clock_t c_feature, c_extractor, c_match, c_homo;
-
-		// init params
-		MatchImgPair match_img_pair;
-		vector<KeyPoint> keypoints_curr;
-		Mat descriptors_curr;
-		vector<DMatch> matches;
-		vector<DMatch> good_matches_curr;
-		vector<Point2f> good_prev, good_curr;
-		Mat img_keypoints_curr;
-
-		// step 0: undistorted img
-		undistort(img_curr_origin, img_curr, cam_intrinsic, cam_distortion);
-
-		// step 1: detect features
-		c_feature = clock();
-		detector->detect(img_curr, keypoints_curr);
-		printf("Feature Detection time: %f seconds\n",
-				(float) (clock() - c_feature) / CLOCKS_PER_SEC);
-		cout << "Num of features: " << keypoints_curr.size() << endl;
-
-		// step 2: descriptor
-		c_extractor = clock();
-		extractor->compute(img_curr, keypoints_curr, descriptors_curr);
-		printf("Descriptor Extraction time: %f seconds\n",
-				(float) (clock() - c_extractor) / CLOCKS_PER_SEC);
-
-		// step 3: FLANN matcher
-		c_match = clock();
-		matcher.match(descriptors_curr, descriptors_prev, matches);
-		printf("Match time: %f seconds\n",
-				(float) (clock() - c_match) / CLOCKS_PER_SEC);
-
-		c_homo = clock();
-		// key points distance
-		double min_dis = 100;
-		for (int i = 0; i < descriptors_curr.rows; i++) {
-			if (matches[i].distance < min_dis)
-				min_dis = matches[i].distance;
-		}
-
-		for (int i = 0; i < descriptors_curr.rows; i++) {
-			if (matches[i].distance < 3 * min_dis)
-				good_matches_curr.push_back(matches[i]);
-		}
-
-		cout << "Good matches num: " << good_matches_curr.size() << endl;
-
-		for (size_t i = 0; i < good_matches_curr.size(); i++) {
-			// Get the keypoints from the good matches
-			Point2f kp_curr = keypoints_curr[good_matches_curr[i].queryIdx].pt;
-			Point2f kp_prev = keypoints_prev[good_matches_curr[i].trainIdx].pt;
-
-			good_curr.push_back(kp_curr);
-			good_prev.push_back(kp_prev);
-
-			match_img_pair.features_prev.push_back(kp_prev);
-			match_img_pair.features_curr.push_back(kp_curr);
-		}
-		match_img_pair.match_pair_num = good_matches_curr.size();
-
-		drawKeypoints(img_curr, keypoints_curr, img_keypoints_curr,
-				Scalar::all(-1), DrawMatchesFlags::DEFAULT);
-		imshow("Features", img_keypoints_curr);
-		stringstream ss;
-		ss << "output/img_f/s" << img_i << ".jpg";
-//		imwrite(ss.str(), img_keypoints_curr);
-
-		try {
-			// step 4: get essential mat
-			Mat E, mask;
-			Point2d pp(cam_intrinsic.at<double> (0, 2),
-					cam_intrinsic.at<double> (1, 2));
-			E = findEssentialMat(good_prev, good_curr,
-					cam_intrinsic.at<double> (0, 0), pp, RANSAC, 0.999, 1.0,
-					mask);
-
-			Mat F = findFundamentalMat(good_prev, good_curr);
-
-			// step 5: get R and t
-			recoverPose(E, good_prev, good_curr, R, t,
-					cam_intrinsic.at<double> (0, 0), pp);
-
-			R.copyTo(match_img_pair.R);
-			t.copyTo(match_img_pair.t);
-
-			//			R_vec.push_back(R);
-			//			t_vec.push_back(t);
-			//			path.push_back(Affine3d(R, t));
-			cout << "R: " << R << endl;
-			cout << "t: " << t << endl;
-			path_est.push_back(Affine3d(R, t));
-
-			// step 6: get 3d position
-			Mat point4d_homo, P1, P2;
-			constructProjectionMat(P1, P2, cam_intrinsic, path, path_est, img_i);
-			triangulatePoints(P1, P2, good_prev, good_curr, point4d_homo);
-
-			for (int i = 0; i < point4d_homo.cols; i++) {
-				float z_index = point4d_homo.at<float> (3, i);
-				Point3f tmp_3d_point;
-				tmp_3d_point.x = point4d_homo.at<float> (0, i) / z_index;
-				tmp_3d_point.y = point4d_homo.at<float> (1, i) / z_index;
-				tmp_3d_point.z = point4d_homo.at<float> (2, i) / z_index;
-				match_img_pair.points_3d.push_back(tmp_3d_point);
-
-				//				Vec3f tmp_vec3 = Vec3f(point4d_homo.at<float> (0, i) / z_index,
-				//						point4d_homo.at<float> (1, i) / z_index,
-				//						point4d_homo.at<float> (2, i) / z_index);
-				//				point_cloud_est.push_back(tmp_vec3);
+			for (int i = 0; i < JUMP_FRAME; i++) {
+				cap >> frame;
 			}
-			match_array.push_back(match_img_pair);
+			//		cap >> frame;
+			if (frame.empty())
+				break;
+			cout << "iteration: " << img_i + bundle_i << endl;
+			cvtColor(frame, img_curr_origin, CV_BGR2GRAY);
 
-			// step 7: bundle adjustment with window BUNDLE_WINDOW
-			if (img_i >= (BUNDLE_WINDOW - 1)) {
-				int win_start = img_i - BUNDLE_WINDOW + 1;
+			// init the img_prev parameters
+			if (keypoints_prev.size() == 0) {
+				img_curr_origin.copyTo(img_prev_origin);
+				undistort(img_prev_origin, img_prev, cam_intrinsic,
+						cam_distortion);
+				detector->detect(img_prev, keypoints_prev);
+				extractor->compute(img_prev, keypoints_prev, descriptors_prev);
+				Mat img_keypoints_prev;
+				drawKeypoints(img_prev, keypoints_prev, img_keypoints_prev,
+						Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+				//			imwrite("output/img_f/s0.jpg", img_keypoints_prev);
 
-				// select window size R-t pair
-				vector<Mat> R_w, t_w, cam_int_w, cam_dis_w;
-				Mat R_rod;
+				R = Mat::eye(3, 3, CV_64F);
+				t = Mat::zeros(3, 1, CV_64F);
+				R_vec.push_back(R);
+				t_vec.push_back(t);
+				path_est.push_back(Affine3d(R, t));
+				path.push_back(Affine3d(R, t));
 
-				for (int w = win_start; w < win_start + BUNDLE_WINDOW - 1; w++) {
-					R_w.push_back(match_array[w].R);
-					t_w.push_back(match_array[w].t);
-					cam_int_w.push_back(cam_intrinsic);
-					cam_dis_w.push_back(cam_distortion);
+				continue;
+			}
+
+			// init params
+			MatchImgPair match_img_pair;
+			vector<KeyPoint> keypoints_curr;
+			Mat descriptors_curr;
+			//		vector<DMatch> matches;
+			vector<DMatch> good_matches_curr;
+			vector<Point2f> good_prev, good_curr;
+			Mat img_keypoints_curr;
+
+			// step 0: undistorted img
+			undistort(img_curr_origin, img_curr, cam_intrinsic, cam_distortion);
+
+			// step 1: detect features
+			c_feature = clock();
+			detector->detect(img_curr, keypoints_curr);
+			printf("Feature Detection time: %f seconds\n",
+					(float) (clock() - c_feature) / CLOCKS_PER_SEC);
+			cout << "Num of features: " << keypoints_curr.size() << endl;
+
+			// step 2: descriptor
+			c_extractor = clock();
+			extractor->compute(img_curr, keypoints_curr, descriptors_curr);
+			printf("Descriptor Extraction time: %f seconds\n",
+					(float) (clock() - c_extractor) / CLOCKS_PER_SEC);
+
+			// step 3: FLANN matcher
+			matcher.add(vector<Mat> (1, descriptors_prev));
+			vector<vector<DMatch> > matches;
+			matcher.knnMatch(descriptors_curr, matches, 2);
+
+			// putative matches
+			int max_track_num = 0;
+			for (size_t i = 0; i < matches.size(); i++) {
+				float dis0 = matches[i][0].distance;
+				float dis1 = matches[i][1].distance;
+				if (dis0 < F_RATIO * dis1) {
+					good_matches_curr.push_back(matches[i][0]);
 				}
+			}
 
-				vector<vector<int> > visib_array;
-				vector<vector<Point2d> > image_points;
+			//		c_match = clock();
+			//		matcher.match(descriptors_curr, descriptors_prev, matches);
+			//		printf("Match time: %f seconds\n",
+			//				(float) (clock() - c_match) / CLOCKS_PER_SEC);
+			//
+			//		c_homo = clock();
+			//		// key points distance
+			//		double min_dis = 100;
+			//		for (int i = 0; i < descriptors_curr.rows; i++) {
+			//			if (matches[i].distance < min_dis)
+			//				min_dis = matches[i].distance;
+			//		}
+			//
+			//		for (int i = 0; i < descriptors_curr.rows; i++) {
+			//			if (matches[i].distance < 3 * min_dis)
+			//				good_matches_curr.push_back(matches[i]);
+			//		}
 
-				// check if there is enough overlapping points
-				if (computeVisibilityImgArray(win_start, match_array,
-						visib_array, image_points) != -1) {
-					cout << "visib_array:" << visib_array.size() << endl
-							<< "img_points: " << image_points.size() << endl;
 
-					try {
-						sba.run(match_array[win_start].points_3d, image_points,
-								visib_array, cam_int_w, R_w, t_w, cam_dis_w);
+			cout << "Good matches num: " << good_matches_curr.size() << endl;
+			if (good_matches_curr.size() < 8)
+				continue;
 
-						// print result
-						cout << "Bundle result " << 0 << endl;
-						cout << "R: " << R_w[0] << endl << "t: " << t_w[0]
-								<< endl;
+			for (size_t i = 0; i < good_matches_curr.size(); i++) {
+				// Get the keypoints from the good matches
+				Point2f kp_curr =
+						keypoints_curr[good_matches_curr[i].queryIdx].pt;
+				Point2f kp_prev =
+						keypoints_prev[good_matches_curr[i].trainIdx].pt;
 
-						cout << "Optimization. Initial error="
-								<< sba.getInitialReprjError()
-								<< " and Final error="
-								<< sba.getFinalReprjError() << endl;
+				good_curr.push_back(kp_curr);
+				good_prev.push_back(kp_prev);
 
-						// step 8: recover R-t and point cloud
-						R_vec.push_back(R_w[0]);
-						t_vec.push_back(t_w[0]);
-						path.push_back(Affine3d(R_w[0], t_w[0]));
-					} catch (...) {
-						R_vec.push_back(R);
-						t_vec.push_back(t);
-						path.push_back(Affine3d(R, t));
-					}
+				match_img_pair.features_prev.push_back(kp_prev);
+				match_img_pair.features_curr.push_back(kp_curr);
+			}
+			match_img_pair.match_pair_num = good_matches_curr.size();
 
-				} else {
-					cout << "Too few overlapping" << endl;
-					R_vec.push_back(R);
-					t_vec.push_back(t);
-					path.push_back(Affine3d(R, t));
+			drawKeypoints(img_curr, keypoints_curr, img_keypoints_curr,
+					Scalar::all(-1), DrawMatchesFlags::DEFAULT);
+			imshow("Features", img_keypoints_curr);
+			stringstream ss;
+			ss << "output/img_f/s" << img_i << ".jpg";
+			//		imwrite(ss.str(), img_keypoints_curr);
+
+			try {
+				// step 4: get essential mat
+				Mat E, mask;
+				Point2d pp(cam_intrinsic.at<double> (0, 2),
+						cam_intrinsic.at<double> (1, 2));
+				E = findEssentialMat(good_prev, good_curr,
+						cam_intrinsic.at<double> (0, 0), pp, RANSAC, 0.999,
+						1.0, mask);
+
+				Mat F = findFundamentalMat(good_prev, good_curr);
+
+				// step 5: get R and t
+				recoverPose(E, good_prev, good_curr, R, t,
+						cam_intrinsic.at<double> (0, 0), pp);
+
+				R.copyTo(match_img_pair.R);
+				t.copyTo(match_img_pair.t);
+
+				cout << "R: " << R << endl;
+				cout << "t: " << t << endl;
+				path_est.push_back(Affine3d(R, t));
+
+				// step 6: get 3d position
+				Mat point4d_homo, P1, P2;
+				constructProjectionMat(P1, P2, cam_intrinsic, path, path_est,
+						img_i + bundle_i);
+				triangulatePoints(P1, P2, good_prev, good_curr, point4d_homo);
+
+				for (int i = 0; i < point4d_homo.cols; i++) {
+					float z_index = point4d_homo.at<float> (3, i);
+					Point3f tmp_3d_point;
+					tmp_3d_point.x = point4d_homo.at<float> (0, i) / z_index;
+					tmp_3d_point.y = point4d_homo.at<float> (1, i) / z_index;
+					tmp_3d_point.z = point4d_homo.at<float> (2, i) / z_index;
+					match_img_pair.points_3d.push_back(tmp_3d_point);
+
+					//				Vec3f tmp_vec3 = Vec3f(point4d_homo.at<float> (0, i) / z_index,
+					//						point4d_homo.at<float> (1, i) / z_index,
+					//						point4d_homo.at<float> (2, i) / z_index);
+					//				point_cloud_est.push_back(tmp_vec3);
 				}
+				match_array.push_back(match_img_pair);
+
+				// update all prev parameters
+				keypoints_prev = keypoints_curr;
+				descriptors_curr.copyTo(descriptors_prev);
+
+				if (waitKey(30) >= 0)
+					break;
+			} catch (...) {
+			}
+		}
+
+		// step 7: bundle adjustment with window BUNDLE_WINDOW
+		// select window size R-t pair
+		vector<Mat> R_w, t_w, cam_int_w, cam_dis_w;
+
+		for (int w = 0; w < BUNDLE_WINDOW - 1; w++) {
+			R_w.push_back(match_array[w].R);
+			t_w.push_back(match_array[w].t);
+			cam_int_w.push_back(cam_intrinsic);
+			cam_dis_w.push_back(cam_distortion);
+		}
+
+		vector<vector<int> > visib_array;
+		vector<vector<Point2d> > image_points;
+
+		// check if there is enough overlapping points
+		if (computeVisibilityImgArray(match_array, visib_array, image_points)
+				!= -1) {
+			cout << "visib_array:" << visib_array.size() << endl
+					<< "img_points: " << image_points.size() << endl;
+
+			try {
+				sba.run(match_array[0].points_3d, image_points, visib_array,
+						cam_int_w, R_w, t_w, cam_dis_w);
+
+				// print result
+				cout << "Bundle result " << 0 << endl;
+				cout << "R: " << R_w[0] << endl << "t: " << t_w[0] << endl;
+
+				cout << "Optimization. Initial error="
+						<< sba.getInitialReprjError() << " and Final error="
+						<< sba.getFinalReprjError() << endl;
+
+				// step 8: recover R-t and point cloud
+				R_vec.insert(R_vec.end(), R_w.begin() + 1, R_w.end());
+				t_vec.insert(t_vec.end(), t_w.begin() + 1, t_w.end());
+				for (size_t i = 1; i < BUNDLE_WINDOW; i++)
+					path.push_back(Affine3d(R_w[i], t_w[i]));
 
 				// push back point cloud
-				for (size_t i = 0; i < match_array[win_start].points_3d.size(); i++) {
-					Point3d tmpp = match_array[win_start].points_3d[i];
-					if (abs(tmpp.x) > 1000 || abs(tmpp.y) > 1000 || abs(tmpp.z)
-							> 1000)
+				for (size_t i = 0; i < match_array[0].points_3d.size(); i++) {
+					Point3d tmpp = match_array[0].points_3d[i];
+					if (abs(tmpp.x) > 5000 || abs(tmpp.y) > 5000 || abs(tmpp.z)
+							> 5000)
 						continue;
 					point_cloud_est.push_back(Vec3f(tmpp.x, tmpp.y, tmpp.z));
 				}
 
+			} catch (...) {
+				R_vec.insert(R_vec.end(), R_w.begin() + 1, R_w.end());
+				t_vec.insert(t_vec.end(), t_w.begin() + 1, t_w.end());
+				for (size_t i = 0; i < (BUNDLE_WINDOW - 1); i++)
+					path.push_back(Affine3d(R_w[i], t_w[i]));
 			}
 
-		} catch (...) {
+		} else {
+			cout << "Too few overlapping" << endl;
 		}
 
-		printf("Total time: %f seconds\n",
-				(float) (clock() - c_feature) / CLOCKS_PER_SEC);
-
-		// update all prev parameters
-		keypoints_prev = keypoints_curr;
-		descriptors_curr.copyTo(descriptors_prev);
-
-		if (waitKey(30) >= 0)
+		if (frame.empty())
 			break;
 	}
 
