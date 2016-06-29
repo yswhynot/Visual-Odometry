@@ -6,6 +6,7 @@
 #include <math.h>
 
 #include <opencv2/sfm.hpp>
+#include "opencv2/sfm/robust.hpp"
 #include "opencv2/opencv.hpp"
 #include "opencv2/core.hpp"
 #include "opencv2/imgcodecs.hpp"
@@ -216,7 +217,7 @@ int main(int argc, char** argv) {
 
 	for (int img_i = 0; img_i < 4; img_i += (BUNDLE_WINDOW - 1)) {
 		vector<MatchImgPair> match_array;
-		vector<Mat> R_w, t_w, cam_int_w, cam_dis_w;
+		vector<Mat> R_w, t_w, P_w, cam_int_w, cam_dis_w;
 
 		for (int bundle_i = 0; bundle_i < BUNDLE_WINDOW; bundle_i++) {
 
@@ -290,25 +291,6 @@ int main(int argc, char** argv) {
 				}
 			}
 
-			//		c_match = clock();
-			//		matcher.match(descriptors_curr, descriptors_prev, matches);
-			//		printf("Match time: %f seconds\n",
-			//				(float) (clock() - c_match) / CLOCKS_PER_SEC);
-			//
-			//		c_homo = clock();
-			//		// key points distance
-			//		double min_dis = 100;
-			//		for (int i = 0; i < descriptors_curr.rows; i++) {
-			//			if (matches[i].distance < min_dis)
-			//				min_dis = matches[i].distance;
-			//		}
-			//
-			//		for (int i = 0; i < descriptors_curr.rows; i++) {
-			//			if (matches[i].distance < 3 * min_dis)
-			//				good_matches_curr.push_back(matches[i]);
-			//		}
-
-
 			cout << "Good matches num: " << good_matches_curr.size() << endl;
 			if (good_matches_curr.size() < 8)
 				continue;
@@ -323,10 +305,7 @@ int main(int argc, char** argv) {
 				good_curr.push_back(kp_curr);
 				good_prev.push_back(kp_prev);
 
-//				match_img_pair.features_prev.push_back(kp_prev);
-//				match_img_pair.features_curr.push_back(kp_curr);
 			}
-//			match_img_pair.match_pair_num = good_matches_curr.size();
 
 			drawKeypoints(img_curr, keypoints_curr, img_keypoints_curr,
 					Scalar::all(-1), DrawMatchesFlags::DEFAULT);
@@ -344,11 +323,10 @@ int main(int argc, char** argv) {
 						cam_intrinsic.at<double> (0, 0), pp, RANSAC, 0.999,
 						1.0, mask);
 
-				Mat F = findFundamentalMat(good_prev, good_curr);
-
 				// step 5: get R and t
-				recoverPose(E, good_prev, good_curr, R, t,
-						cam_intrinsic.at<double> (0, 0), pp);
+				int count_inlier = recoverPose(E, good_prev, good_curr, R, t,
+						cam_intrinsic.at<double> (0, 0), pp, mask);
+				cout << "Inliers: " << (float)count_inlier / (float)good_prev.size() << endl;
 
 				R.copyTo(match_img_pair.R);
 				t.copyTo(match_img_pair.t);
@@ -360,9 +338,11 @@ int main(int argc, char** argv) {
 
 				// step 6: get 3d position
 				Mat point4d_homo, P1, P2;
+//				projectionFromKRt(cam_intrinsic, R, t, P1);
 				//				constructProjectionMat(P1, P2, cam_intrinsic, path, path_est,
 				//						img_i + bundle_i);
 				constructProjectionMat2(P1, P2, cam_intrinsic, R_w, t_w);
+				P_w.push_back(P2);
 				triangulatePoints(P1, P2, good_prev, good_curr, point4d_homo);
 
 				int count = 0;
@@ -374,17 +354,12 @@ int main(int argc, char** argv) {
 					tmp_3d_point.y = point4d_homo.at<float> (1, i) / z_index;
 					tmp_3d_point.z = point4d_homo.at<float> (2, i) / z_index;
 
-					if(tmp_3d_point.z > 0) {
+					if (tmp_3d_point.z > 0) {
 						count ++;
 						match_img_pair.points_3d.push_back(tmp_3d_point);
 						match_img_pair.features_prev.push_back(good_prev[i]);
 						match_img_pair.features_curr.push_back(good_curr[i]);
 					}
-
-					//				Vec3f tmp_vec3 = Vec3f(point4d_homo.at<float> (0, i) / z_index,
-					//						point4d_homo.at<float> (1, i) / z_index,
-					//						point4d_homo.at<float> (2, i) / z_index);
-					//				point_cloud_est.push_back(tmp_vec3);
 				}
 
 				cout << "Percent positive: " << (float)count / (float)point4d_homo.cols << endl;

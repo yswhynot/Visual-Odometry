@@ -49,9 +49,9 @@
 //	// Parse the image paths
 //	vector<string> images_paths;
 //	//	getdir(argv[1], images_paths);
-//	for (int i = 20; i < 27; i++) {
+//	for (int i = 0; i < 11; i++) {
 //		std::stringstream ss;
-//		ss << "trans_img/s" << i << ".jpg";
+//		ss << "output/sfm_tmp/s" << i << ".jpg";
 //		images_paths.push_back(ss.str());
 //	}
 //	// Build instrinsics
