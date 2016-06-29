@@ -5,6 +5,7 @@
 #include <string>
 #include <math.h>
 
+#include <opencv2/sfm.hpp>
 #include "opencv2/opencv.hpp"
 #include "opencv2/core.hpp"
 #include "opencv2/imgcodecs.hpp"
@@ -18,11 +19,12 @@
 #include "cvsba/cvsba.h"
 
 using namespace cv;
+using namespace cv::sfm;
 using namespace std;
 
 const int IMG_WIDTH = 800;
 const int IMG_HEIGHT = 600;
-const int BUNDLE_WINDOW = 4; // should be larger than 3
+const int BUNDLE_WINDOW = 5; // should be larger than 3
 const int JUMP_FRAME = 3;
 const float F_RATIO = 0.8;
 
@@ -74,6 +76,27 @@ void constructProjectionMat(Mat& P1, Mat& P2, Mat& cam_intrinsic,
 	P2.pop_back(1);
 	P2 = cam_intrinsic * P2;
 	cout << "P1: " << P1 << endl << "P2: " << P2 << endl;
+}
+
+void constructProjectionMat2(Mat& P1, Mat& P2, Mat& cam_intrinsic,
+		vector<Mat>& R_w, vector<Mat>& t_w) {
+	Mat R1, R2, t1, t2, R_tmp, t_tmp;
+	R_tmp = Mat::eye(3, 3, CV_64F);
+	t_tmp = Mat::zeros(3, 1, CV_64F);
+
+	for(size_t i = 0; i < (R_w.size() - 1); i++) {
+		R_tmp = R_w[i] * R_tmp;
+		t_tmp = R_w[i] * t_tmp + t_w[i];
+	}
+	R1 = R_tmp; t1 = t_tmp;
+	R2 = R_w.back() * R_tmp;
+	t2 = R_w.back() * t_tmp + t_w.back();
+
+	cout << "R1: " << R1 << "\t\t" << "t1: " << t1 << endl;
+	cout << "R2: " << R2 << "\t\t" << "t2: " << t2 << endl;
+
+	projectionFromKRt(cam_intrinsic, R1, t1, P1);
+	projectionFromKRt(cam_intrinsic, R2, t2, P2);
 }
 
 int computeVisibilityImgArray(vector<MatchImgPair>& match_array,
@@ -162,7 +185,6 @@ int main(int argc, char** argv) {
 	// rotation & translation arrays
 	vector<Mat> R_vec, t_vec;
 	vector<Affine3d> path;
-	vector<Affine3d> path_est;
 
 	Mat R, t, P1, P2, R1, R2, Q;
 	vector<Vec3f> point_cloud_est;
@@ -192,8 +214,9 @@ int main(int argc, char** argv) {
 
 	c_begin = clock();
 
-	for (int img_i = 0; img_i < 25; img_i += (BUNDLE_WINDOW - 1)) {
+	for (int img_i = 0; img_i < 4; img_i += (BUNDLE_WINDOW - 1)) {
 		vector<MatchImgPair> match_array;
+		vector<Mat> R_w, t_w, cam_int_w, cam_dis_w;
 
 		for (int bundle_i = 0; bundle_i < BUNDLE_WINDOW; bundle_i++) {
 
@@ -222,7 +245,6 @@ int main(int argc, char** argv) {
 				t = Mat::zeros(3, 1, CV_64F);
 				R_vec.push_back(R);
 				t_vec.push_back(t);
-				path_est.push_back(Affine3d(R, t));
 				path.push_back(Affine3d(R, t));
 
 				continue;
@@ -234,7 +256,7 @@ int main(int argc, char** argv) {
 			Mat descriptors_curr;
 			//		vector<DMatch> matches;
 			vector<DMatch> good_matches_curr;
-			vector<Point2f> good_prev, good_curr;
+			vector<Point2f> good_prev, good_curr, good_prev_filter, good_curr_filter;
 			Mat img_keypoints_curr;
 
 			// step 0: undistorted img
@@ -301,10 +323,10 @@ int main(int argc, char** argv) {
 				good_curr.push_back(kp_curr);
 				good_prev.push_back(kp_prev);
 
-				match_img_pair.features_prev.push_back(kp_prev);
-				match_img_pair.features_curr.push_back(kp_curr);
+//				match_img_pair.features_prev.push_back(kp_prev);
+//				match_img_pair.features_curr.push_back(kp_curr);
 			}
-			match_img_pair.match_pair_num = good_matches_curr.size();
+//			match_img_pair.match_pair_num = good_matches_curr.size();
 
 			drawKeypoints(img_curr, keypoints_curr, img_keypoints_curr,
 					Scalar::all(-1), DrawMatchesFlags::DEFAULT);
@@ -333,13 +355,17 @@ int main(int argc, char** argv) {
 
 				cout << "R: " << R << endl;
 				cout << "t: " << t << endl;
-				path_est.push_back(Affine3d(R, t));
+				R_w.push_back(R);
+				t_w.push_back(t);
 
 				// step 6: get 3d position
 				Mat point4d_homo, P1, P2;
-				constructProjectionMat(P1, P2, cam_intrinsic, path, path_est,
-						img_i + bundle_i);
+				//				constructProjectionMat(P1, P2, cam_intrinsic, path, path_est,
+				//						img_i + bundle_i);
+				constructProjectionMat2(P1, P2, cam_intrinsic, R_w, t_w);
 				triangulatePoints(P1, P2, good_prev, good_curr, point4d_homo);
+
+				int count = 0;
 
 				for (int i = 0; i < point4d_homo.cols; i++) {
 					float z_index = point4d_homo.at<float> (3, i);
@@ -347,14 +373,25 @@ int main(int argc, char** argv) {
 					tmp_3d_point.x = point4d_homo.at<float> (0, i) / z_index;
 					tmp_3d_point.y = point4d_homo.at<float> (1, i) / z_index;
 					tmp_3d_point.z = point4d_homo.at<float> (2, i) / z_index;
-					match_img_pair.points_3d.push_back(tmp_3d_point);
+
+					if(tmp_3d_point.z > 0) {
+						count ++;
+						match_img_pair.points_3d.push_back(tmp_3d_point);
+						match_img_pair.features_prev.push_back(good_prev[i]);
+						match_img_pair.features_curr.push_back(good_curr[i]);
+					}
 
 					//				Vec3f tmp_vec3 = Vec3f(point4d_homo.at<float> (0, i) / z_index,
 					//						point4d_homo.at<float> (1, i) / z_index,
 					//						point4d_homo.at<float> (2, i) / z_index);
 					//				point_cloud_est.push_back(tmp_vec3);
 				}
+
+				cout << "Percent positive: " << (float)count / (float)point4d_homo.cols << endl;
+				match_img_pair.match_pair_num = count;
 				match_array.push_back(match_img_pair);
+				cam_int_w.push_back(cam_intrinsic);
+				cam_dis_w.push_back(cam_distortion);
 
 				// update all prev parameters
 				keypoints_prev = keypoints_curr;
@@ -367,15 +404,6 @@ int main(int argc, char** argv) {
 		}
 
 		// step 7: bundle adjustment with window BUNDLE_WINDOW
-		// select window size R-t pair
-		vector<Mat> R_w, t_w, cam_int_w, cam_dis_w;
-
-		for (int w = 0; w < BUNDLE_WINDOW - 1; w++) {
-			R_w.push_back(match_array[w].R);
-			t_w.push_back(match_array[w].t);
-			cam_int_w.push_back(cam_intrinsic);
-			cam_dis_w.push_back(cam_distortion);
-		}
 
 		vector<vector<int> > visib_array;
 		vector<vector<Point2d> > image_points;
@@ -383,8 +411,6 @@ int main(int argc, char** argv) {
 		// check if there is enough overlapping points
 		if (computeVisibilityImgArray(match_array, visib_array, image_points)
 				!= -1) {
-			cout << "visib_array:" << visib_array.size() << endl
-					<< "img_points: " << image_points.size() << endl;
 
 			try {
 				sba.run(match_array[0].points_3d, image_points, visib_array,
@@ -393,31 +419,32 @@ int main(int argc, char** argv) {
 				// print result
 				cout << "Bundle result " << 0 << endl;
 				cout << "R: " << R_w[0] << endl << "t: " << t_w[0] << endl;
+				cout << "Bundle result " << 1 << endl;
+				cout << "R: " << R_w[1] << endl << "t: " << t_w[1] << endl;
+				cout << "Bundle result " << 2 << endl;
+				cout << "R: " << R_w[2] << endl << "t: " << t_w[2] << endl;
 
 				cout << "Optimization. Initial error="
 						<< sba.getInitialReprjError() << " and Final error="
 						<< sba.getFinalReprjError() << endl;
 
-				// step 8: recover R-t and point cloud
-				R_vec.insert(R_vec.end(), R_w.begin() + 1, R_w.end());
-				t_vec.insert(t_vec.end(), t_w.begin() + 1, t_w.end());
-				for (size_t i = 1; i < BUNDLE_WINDOW; i++)
-					path.push_back(Affine3d(R_w[i], t_w[i]));
-
-				// push back point cloud
-				for (size_t i = 0; i < match_array[0].points_3d.size(); i++) {
-					Point3d tmpp = match_array[0].points_3d[i];
-					if (abs(tmpp.x) > 5000 || abs(tmpp.y) > 5000 || abs(tmpp.z)
-							> 5000)
-						continue;
-					point_cloud_est.push_back(Vec3f(tmpp.x, tmpp.y, tmpp.z));
-				}
-
 			} catch (...) {
-				R_vec.insert(R_vec.end(), R_w.begin() + 1, R_w.end());
-				t_vec.insert(t_vec.end(), t_w.begin() + 1, t_w.end());
-				for (size_t i = 0; i < (BUNDLE_WINDOW - 1); i++)
-					path.push_back(Affine3d(R_w[i], t_w[i]));
+				cout << "SBA failed" << endl;
+			}
+
+			// step 8: recover R-t and point cloud
+			R_vec.insert(R_vec.end(), R_w.begin() + 1, R_w.end());
+			t_vec.insert(t_vec.end(), t_w.begin() + 1, t_w.end());
+			for (size_t i = 1; i < BUNDLE_WINDOW; i++)
+				path.push_back(Affine3d(R_w[i], t_w[i]));
+
+			// push back point cloud
+			for (size_t i = 0; i < match_array[0].points_3d.size(); i++) {
+				Point3d tmpp = match_array[0].points_3d[i];
+				if (abs(tmpp.x) > 5000 || abs(tmpp.y) > 5000 || abs(tmpp.z)
+						> 5000)
+					continue;
+				point_cloud_est.push_back(Vec3f(tmpp.x, tmpp.y, tmpp.z));
 			}
 
 		} else {

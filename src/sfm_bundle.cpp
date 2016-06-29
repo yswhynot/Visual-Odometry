@@ -9,6 +9,15 @@
 //#include <opencv2/videoio.hpp>
 //#include <cvsba/cvsba.h>
 //#include <iostream>
+//#include <opencv2/sfm.hpp>
+//#include <opencv2/viz.hpp>
+//#include <opencv2/imgproc.hpp>
+//#include <opencv2/highgui.hpp>
+//#include <opencv2/calib3d.hpp>
+//#include <opencv2/core.hpp>
+//#include <opencv2/videoio.hpp>
+//#include <cvsba/cvsba.h>
+//#include <iostream>
 //#include <fstream>
 //#include <string>
 //#include <time.h>
