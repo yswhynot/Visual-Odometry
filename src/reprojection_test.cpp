@@ -56,9 +56,9 @@ void generateRandom3dPoints(vector<Vec3f>& original_3dpoints) {
 	srand(time(NULL));
 	int x, y, z;
 	for (int i = 0; i < 1000; i++) {
-		x = rand() % 200 - 100;
-		y = rand() % 200 - 100;
-		z = rand() % 100 + 30;
+		x = rand() % 400 - 200;
+		y = rand() % 400 - 200;
+		z = rand() % 100 + 50;
 		Vec3f tmp(x, y, z);
 		original_3dpoints.push_back(tmp);
 	}
@@ -74,17 +74,20 @@ void generateRT(vector<Affine3d>& path, vector<Mat>& R_theo,
 		Mat R = Mat::eye(3, 3, CV_64F);
 		Mat t = Mat::zeros(3, 1, CV_64F);
 
-		t.at<double> (0, 0) = 0.5;
+		t.at<double> (0, 0) = 1;
+		t.at<double> (1, 0) = 0.5;
 
 		if (i > 20) {
 			Vec3f tmp(0, 0.1, 0);
 			Rodrigues(tmp, R);
 			R.convertTo(R, CV_64F);
-			t.at<double> (0, 0) = 0.2;
+			t.at<double> (0, 0) = 0.1;
+			t.at<double> (1, 0) = 0.05;
 		}
 
 		if (i > 0) {
 			t.at<double> (0, 0) += 0.05 * i;
+			t.at<double> (1, 0) += 0.02 * i;
 			R = R_theo[i - 1] * R;
 			t = R_theo[i - 1] * t + t_theo[i - 1];
 		}
@@ -123,21 +126,27 @@ void getMatchPairs(vector<Point2d>& points2d_prev,
 		vector<Point2d>& points2d_curr, vector<int>& point_id_prev,
 		vector<int>& point_id_curr) {
 	vector<Point2d> tmp_prev, tmp_curr;
+	vector<int> tmp_id_prev, tmp_id_curr;
 	for (size_t i = 0; i < point_id_prev.size(); i++) {
-		vector<int>::iterator it = find(point_id_curr.begin(),
-				point_id_curr.end(), point_id_prev[i]);
-		if (it != point_id_curr.end()) {
+		int index = find(point_id_curr.begin(), point_id_curr.end(),
+				point_id_prev[i]) - point_id_curr.begin();
+		if (index < point_id_curr.size()) {
 			tmp_prev.push_back(points2d_prev[i]);
-			tmp_curr.push_back(points2d_curr[*it]);
+			tmp_curr.push_back(points2d_curr[index]);
+			tmp_id_prev.push_back(point_id_prev[i]);
+			tmp_id_curr.push_back(point_id_curr[index]);
 		}
 	}
 
 	points2d_prev = tmp_prev;
 	points2d_curr = tmp_curr;
+	point_id_prev = tmp_id_prev;
+	point_id_curr = tmp_id_curr;
 }
 
 void drawImages(vector<Point2d>& points2d_prev, vector<Point2d>& points2d_curr,
-		vector<int>& points_id_prev, vector<int>& points_id_curr, vector<Vec3f>& points3d) {
+		vector<int>& points_id_prev, vector<int>& points_id_curr,
+		vector<Vec3f>& points3d) {
 	Mat image_prev = Mat::zeros(400, 600, CV_8UC3);
 	Mat image_curr = Mat::zeros(400, 600, CV_8UC3);
 	RNG rng(12345);
@@ -150,7 +159,7 @@ void drawImages(vector<Point2d>& points2d_prev, vector<Point2d>& points2d_curr,
 		Point2d p_prev(points2d_prev[i].x + 300, points2d_prev[i].y + 200);
 		Point2d p_curr(points2d_curr[i].x + 300, points2d_curr[i].y + 200);
 		circle(image_prev, p_prev, 200 / z_prev, color, -1);
-		circle(image_curr, p_curr, 200 / z_curr, color, -1);
+		circle(image_curr, p_curr, 200 / z_prev, color, -1);
 	}
 	imshow("Points_prev", image_prev);
 	imshow("Points_curr", image_curr);
@@ -203,7 +212,30 @@ int main(int argc, char** argv) {
 
 				getMatchPairs(points2d_prev, points2d_curr, point_id_prev,
 						point_id_curr);
-				//			cout << "points2d_prev: " << points2d_prev << "points2d_curr: " << points2d_curr << endl;
+
+//				Mat point_id_mat_prev = Mat::zeros(1, point_id_prev.size(),
+//						CV_32F);
+//				Mat point_id_mat_curr = Mat::zeros(1, point_id_curr.size(),
+//						CV_32F);
+//				for (size_t i = 0; i < point_id_prev.size(); i++) {
+//					point_id_mat_prev.at<float> (0, i) = point_id_prev[i];
+//					point_id_mat_curr.at<float> (0, i) = point_id_curr[i];
+//				}
+//				cout << "point_id_mat_prev: " << point_id_mat_prev << endl
+//						<< "point_id_mat_curr: " << point_id_mat_curr << endl;
+//
+//				Mat point_mat_prev =
+//						Mat::zeros(2, point_id_prev.size(), CV_64F);
+//				Mat point_mat_curr =
+//						Mat::zeros(2, point_id_curr.size(), CV_64F);
+//				for (size_t i = 0; i < points2d_prev.size(); i++) {
+//					point_mat_prev.at<double> (0, i) = points2d_prev[i].x;
+//					point_mat_prev.at<double> (1, i) = points2d_prev[i].y;
+//					point_mat_curr.at<double> (0, i) = points2d_curr[i].x;
+//					point_mat_curr.at<double> (1, i) = points2d_curr[i].y;
+//				}
+//				cout << "points2d_prev: " << point_mat_prev << endl
+//						<< "points2d_curr: " << point_mat_curr << endl;
 
 				Mat E, mask, R, t;
 				Point2d pp(cam_intrinsic.at<double> (0, 2),
@@ -214,6 +246,7 @@ int main(int argc, char** argv) {
 
 				int count_inlier = recoverPose(E, points2d_prev, points2d_curr,
 						R, t, cam_intrinsic.at<double> (0, 0), pp, mask);
+				cout << "Mask: " << mask << endl;
 				cout << "Inliers: " << (float) count_inlier
 						/ (float) points2d_prev.size() << endl;
 				cout << "total points: " << points2d_prev.size() << endl;
