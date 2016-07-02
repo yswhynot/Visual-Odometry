@@ -29,23 +29,37 @@ const int IMG_HEIGHT = 600;
 const int BUNDLE_WINDOW = 5; // should be larger than 3
 const int JUMP_FRAME = 3;
 const float F_RATIO = 0.8;
-const int CAM_NUM = 30;
+const int CAM_NUM = 20;
+
+double getScale(Affine3d& path_element) {
+	Vec3d path_mat = path_element.translation();
+	return norm(path_mat);
+}
 
 void constructProjectionMat2(Mat& P1, Mat& P2, Mat& cam_intrinsic,
-		vector<Mat>& R_w, vector<Mat>& t_w) {
+		vector<Mat>& R_w, vector<Mat>& t_w, int index) {
 	Mat R1, R2, t1, t2, R_tmp, t_tmp;
 	R_tmp = Mat::eye(3, 3, CV_64F);
 	t_tmp = Mat::zeros(3, 1, CV_64F);
 
-	for (size_t i = 0; i < (R_w.size() - 1); i++) {
+	for (size_t i = 0; i < (index - 1); i++) {
 		R_tmp = R_w[i] * R_tmp;
 		t_tmp = R_w[i] * t_tmp + t_w[i];
+//		cout << "R_tmp: " << R_tmp << endl << "t_tmp: " << t_tmp << endl;
 	}
 	R1 = R_tmp;
 	t1 = t_tmp;
 	R2 = R_w.back() * R_tmp;
 	t2 = R_w.back() * t_tmp + t_w.back();
+//	R1 = R_w[index - 1]; R2 = R_w[index];
+//	t1 = t_w[index - 1]; t2 = t_w[index];
+	cout << "R1: " << R1 << endl << "t1: " << t1 << endl;
+	cout << "R2: " << R2 << endl << "t2: " << t2 << endl;
 
+//	Mat wtf(3, 1, CV_64F);
+//	wtf.at<double>(0, 0) = 0.1; wtf.at<double>(1, 0) = 0.2; wtf.at<double>(2, 0) = 0.3;
+//	Rodrigues(wtf, R1);
+//	cout << "R1: " << R1 << endl;
 	projectionFromKRt(cam_intrinsic, R1, t1, P1);
 	projectionFromKRt(cam_intrinsic, R2, t2, P2);
 }
@@ -55,10 +69,10 @@ void generateRandom3dPoints(vector<Vec3f>& original_3dpoints) {
 
 	srand(time(NULL));
 	int x, y, z;
-	for (int i = 0; i < 1000; i++) {
-		x = rand() % 400 - 200;
-		y = rand() % 400 - 200;
-		z = rand() % 100 + 50;
+	for (int i = 0; i < 2000; i++) {
+		x = rand() % 800 - 400;
+		y = rand() % 800 - 400;
+		z = rand() % 200 + 50;
 		Vec3f tmp(x, y, z);
 		original_3dpoints.push_back(tmp);
 	}
@@ -77,24 +91,26 @@ void generateRT(vector<Affine3d>& path, vector<Mat>& R_theo,
 		t.at<double> (0, 0) = 1;
 		t.at<double> (1, 0) = 0.5;
 
-		if (i > 20) {
-			Vec3f tmp(0, 0.1, 0);
-			Rodrigues(tmp, R);
-			R.convertTo(R, CV_64F);
-			t.at<double> (0, 0) = 0.1;
-			t.at<double> (1, 0) = 0.05;
-		}
+//		if (i > 20) {
+//			Vec3f tmp(0, 0.1, 0);
+//			Rodrigues(tmp, R);
+//			R.convertTo(R, CV_64F);
+//			t.at<double> (0, 0) = 0.1;
+//			t.at<double> (1, 0) = 0.05;
+//		}
+
+		t.at<double> (0, 0) += 0.05 * i;
+		t.at<double> (1, 0) += 0.02 * i;
+		path.push_back(Affine3d(R, t));
 
 		if (i > 0) {
-			t.at<double> (0, 0) += 0.05 * i;
-			t.at<double> (1, 0) += 0.02 * i;
-			R = R_theo[i - 1] * R;
-			t = R_theo[i - 1] * t + t_theo[i - 1];
+			R = R * R_theo[i - 1];
+			t = R * t_theo[i - 1] + t;
 		}
 
 		R_theo.push_back(R);
 		t_theo.push_back(t);
-		path.push_back(Affine3d(R, t));
+
 	}
 
 	cout << "Initial R t done" << endl;
@@ -159,7 +175,7 @@ void drawImages(vector<Point2d>& points2d_prev, vector<Point2d>& points2d_curr,
 		Point2d p_prev(points2d_prev[i].x + 300, points2d_prev[i].y + 200);
 		Point2d p_curr(points2d_curr[i].x + 300, points2d_curr[i].y + 200);
 		circle(image_prev, p_prev, 200 / z_prev, color, -1);
-		circle(image_curr, p_curr, 200 / z_prev, color, -1);
+		circle(image_curr, p_curr, 200 / z_curr, color, -1);
 	}
 	imshow("Points_prev", image_prev);
 	imshow("Points_curr", image_curr);
@@ -167,9 +183,68 @@ void drawImages(vector<Point2d>& points2d_prev, vector<Point2d>& points2d_curr,
 	waitKey(0);
 }
 
+//int computeVisibilityImgArray(vector<MatchImgPair>& match_array,
+//		vector<vector<int> >& visib_array,
+//		vector<vector<Point2d> >& image_points) {
+//	// compute for the 3d points of the first pair of imgs
+//	// features all visible for the first pair
+//	vector<int> visible;
+//	vector<Point2d> image;
+//	visible.assign(match_array[0].match_pair_num, 1);
+//	visib_array.push_back(visible);
+//	cout << "count " << 0 << ": " << visible.size() << endl;
+//	image_points.push_back(match_array[0].features_curr);
+//	visible.clear();
+//
+//	for (int i = 1; i < BUNDLE_WINDOW - 1; i++) {
+//
+//		vector<Point2d> prev_match = match_array[i - 1].features_curr;
+//		vector<Point2d> curr_match = match_array[i].features_prev;
+//
+//		int count_n = 0;
+//
+//		for (size_t j = 0; j < match_array[0].match_pair_num; j++) {
+//
+//			// if feature point exist in prev(i), calculate curr(i+1)
+//			int index = -1;
+//			if (visib_array[i - 1][j] == 1) {
+//				// find corresponding feature point of prev in curr
+//				for (size_t k = 0; k < match_array[i].match_pair_num; k++) {
+//					if (prev_match[j] == curr_match[k]) {
+//						index = k;
+//						break;
+//					} // end if
+//				} // end for k
+//			} // end if
+//
+//			// if prev feature point exists
+//			if (index != -1) {
+//				visible.push_back(1);
+//				image.push_back(match_array[i].features_curr[index]);
+//				count_n++;
+//			} else {
+//				visible.push_back(0);
+//				image.push_back(Point2d(0, 0));
+//			}
+//
+//		} // end for j
+//
+//		if (count_n < 8)
+//			return -1;
+//		cout << "count " << i << ": " << count_n << endl;
+//
+//		visib_array.push_back(visible);
+//		image_points.push_back(image);
+//		visible.clear();
+//		image.clear();
+//	} // end for i
+//
+//	return 0;
+//}
+
 int main(int argc, char** argv) {
 
-	namedWindow("Points_prev");
+ 	namedWindow("Points_prev");
 	namedWindow("Points_curr");
 
 	// load camera intrinsic matrix
@@ -197,7 +272,7 @@ int main(int argc, char** argv) {
 		for (int img_i = 0; img_i < CAM_NUM; img_i += (BUNDLE_WINDOW - 1)) {
 			for (int wi = 0; wi < (BUNDLE_WINDOW - 1); wi++) {
 				int position = img_i + wi;
-				Mat img_points;
+				Mat img_points, E, mask, R, t;
 				vector<Point2d> points2d_curr;
 				vector<int> point_id_curr;
 				projectToCamImg(original_3dpoints, cam_intrinsic,
@@ -207,37 +282,41 @@ int main(int argc, char** argv) {
 				if (points2d_prev.size() == 0) {
 					points2d_prev = points2d_curr;
 					point_id_prev = point_id_curr;
+					R = Mat::eye(3, 3, CV_64F);
+					t = Mat::zeros(3, 1, CV_64F);
+					R_est.push_back(R);
+					t_est.push_back(t);
+					path_est.push_back(Affine3d(R, t));
 					continue;
 				}
 
 				getMatchPairs(points2d_prev, points2d_curr, point_id_prev,
 						point_id_curr);
 
-//				Mat point_id_mat_prev = Mat::zeros(1, point_id_prev.size(),
-//						CV_32F);
-//				Mat point_id_mat_curr = Mat::zeros(1, point_id_curr.size(),
-//						CV_32F);
-//				for (size_t i = 0; i < point_id_prev.size(); i++) {
-//					point_id_mat_prev.at<float> (0, i) = point_id_prev[i];
-//					point_id_mat_curr.at<float> (0, i) = point_id_curr[i];
-//				}
-//				cout << "point_id_mat_prev: " << point_id_mat_prev << endl
-//						<< "point_id_mat_curr: " << point_id_mat_curr << endl;
-//
-//				Mat point_mat_prev =
-//						Mat::zeros(2, point_id_prev.size(), CV_64F);
-//				Mat point_mat_curr =
-//						Mat::zeros(2, point_id_curr.size(), CV_64F);
-//				for (size_t i = 0; i < points2d_prev.size(); i++) {
-//					point_mat_prev.at<double> (0, i) = points2d_prev[i].x;
-//					point_mat_prev.at<double> (1, i) = points2d_prev[i].y;
-//					point_mat_curr.at<double> (0, i) = points2d_curr[i].x;
-//					point_mat_curr.at<double> (1, i) = points2d_curr[i].y;
-//				}
-//				cout << "points2d_prev: " << point_mat_prev << endl
-//						<< "points2d_curr: " << point_mat_curr << endl;
+				//				Mat point_id_mat_prev = Mat::zeros(1, point_id_prev.size(),
+				//						CV_32F);
+				//				Mat point_id_mat_curr = Mat::zeros(1, point_id_curr.size(),
+				//						CV_32F);
+				//				for (size_t i = 0; i < point_id_prev.size(); i++) {
+				//					point_id_mat_prev.at<float> (0, i) = point_id_prev[i];
+				//					point_id_mat_curr.at<float> (0, i) = point_id_curr[i];
+				//				}
+				//				cout << "point_id_mat_prev: " << point_id_mat_prev << endl
+				//						<< "point_id_mat_curr: " << point_id_mat_curr << endl;
+				//
+				//				Mat point_mat_prev =
+				//						Mat::zeros(2, point_id_prev.size(), CV_64F);
+				//				Mat point_mat_curr =
+				//						Mat::zeros(2, point_id_curr.size(), CV_64F);
+				//				for (size_t i = 0; i < points2d_prev.size(); i++) {
+				//					point_mat_prev.at<double> (0, i) = points2d_prev[i].x;
+				//					point_mat_prev.at<double> (1, i) = points2d_prev[i].y;
+				//					point_mat_curr.at<double> (0, i) = points2d_curr[i].x;
+				//					point_mat_curr.at<double> (1, i) = points2d_curr[i].y;
+				//				}
+				//				cout << "points2d_prev: " << point_mat_prev << endl
+				//						<< "points2d_curr: " << point_mat_curr << endl;
 
-				Mat E, mask, R, t;
 				Point2d pp(cam_intrinsic.at<double> (0, 2),
 						cam_intrinsic.at<double> (1, 2));
 				E = findEssentialMat(points2d_prev, points2d_curr,
@@ -246,17 +325,24 @@ int main(int argc, char** argv) {
 
 				int count_inlier = recoverPose(E, points2d_prev, points2d_curr,
 						R, t, cam_intrinsic.at<double> (0, 0), pp, mask);
-				cout << "Mask: " << mask << endl;
+
+				t = getScale(path[position]) * t;
+
+				//				cout << "Mask: " << mask << endl;
 				cout << "Inliers: " << (float) count_inlier
 						/ (float) points2d_prev.size() << endl;
 				cout << "total points: " << points2d_prev.size() << endl;
 
 				cout << "R: " << R << endl << "t: " << t << endl;
+				cout << "R_theo: " << R_theo[position] << endl << "t_theo: " << t_theo[position]
+								<< endl;
+
 				R_est.push_back(R);
 				t_est.push_back(t);
+				path_est.push_back(Affine3d(R, t));
 
 				Mat point4d_homo, P1, P2;
-				constructProjectionMat2(P1, P2, cam_intrinsic, R_est, t_est);
+				constructProjectionMat2(P1, P2, cam_intrinsic, R_est, t_est, position);
 				triangulatePoints(P1, P2, points2d_prev, points2d_curr,
 						point4d_homo);
 
@@ -265,15 +351,14 @@ int main(int argc, char** argv) {
 
 				int count = 0;
 				for (int i = 0; i < point4d_homo.cols; i++) {
-					float z_index = point4d_homo.at<float> (3, i);
-					Point3f tmp_3d_point;
-					tmp_3d_point.x = point4d_homo.at<float> (0, i) / z_index;
-					tmp_3d_point.y = point4d_homo.at<float> (1, i) / z_index;
-					tmp_3d_point.z = point4d_homo.at<float> (2, i) / z_index;
+					Vec3d tmp_3d_point;
+					homogeneousToEuclidean(point4d_homo.col(i), tmp_3d_point);
 
-					if (tmp_3d_point.z > 0) {
+					if (tmp_3d_point[2] > 0) {
 						count++;
 						est_3dpoints.push_back(tmp_3d_point);
+						cout << "point est: " << tmp_3d_point << endl;
+						cout << "point origin: " << original_3dpoints[point_id_curr[i]] << endl;
 					}
 				}
 				cout << "Percent positive: " << (float) count
@@ -292,6 +377,20 @@ int main(int argc, char** argv) {
 		} // end for img_i
 	} catch (...) {
 	}
+
+	Mat points_output = Mat::zeros(3, est_3dpoints.size(), CV_64F);
+	for (size_t i = 0; i < est_3dpoints.size(); i++) {
+		points_output.at<double> (0, i) = est_3dpoints[i][0];
+		points_output.at<double> (1, i) = est_3dpoints[i][1];
+		points_output.at<double> (2, i) = est_3dpoints[i][2];
+	}
+	cout << "point3d: " << points_output << endl;
+//	Mat R_output = Mat::zeros(3, R_est.size(), CV_64F);
+//	for (size_t i = 0; i < R_est.size(); i++) {
+//		cout << "R_est: " << R_est[i] << endl << "t_est: " << t_est[i] << endl;
+//		cout << "R:   : " << R_theo[i] << endl << "t    : " << t_theo[i]
+//				<< endl;
+//	}
 
 	viz::Viz3d window("Coordinate Frame");
 	window.setWindowSize(Size(500, 500));
@@ -315,8 +414,10 @@ int main(int argc, char** argv) {
 	}
 
 	if (est_3dpoints.size() > 0) {
+		cout << "Rendering points est   ... ";
 		viz::WCloud cloud_widget_est(est_3dpoints, viz::Color::green());
 		window.showWidget("point_cloud_est", cloud_widget_est);
+		cout << "[DONE]" << endl;
 	} else {
 		cout << "Cannot render points: Empty pointcloud_est" << endl;
 	}

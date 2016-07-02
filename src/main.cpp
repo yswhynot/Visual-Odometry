@@ -344,13 +344,10 @@
 //				int count = 0;
 //
 //				for (int i = 0; i < point4d_homo.cols; i++) {
-//					float z_index = point4d_homo.at<float> (3, i);
-//					Point3f tmp_3d_point;
-//					tmp_3d_point.x = point4d_homo.at<float> (0, i) / z_index;
-//					tmp_3d_point.y = point4d_homo.at<float> (1, i) / z_index;
-//					tmp_3d_point.z = point4d_homo.at<float> (2, i) / z_index;
+//					Vec3d tmp_3d_point;
+//					homogeneousToEuclidean(point4d_homo.col(i), tmp_3d_point);
 //
-//					if (tmp_3d_point.z > 0) {
+//					if (tmp_3d_point[2] > 0) {
 //						count++;
 //						match_img_pair.points_3d.push_back(tmp_3d_point);
 //						match_img_pair.features_prev.push_back(good_prev[i]);
