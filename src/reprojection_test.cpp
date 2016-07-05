@@ -329,8 +329,9 @@
 //				t = getScale(path[position]) * t;
 //
 //				//				cout << "Mask: " << mask << endl;
-//				cout << "Inliers: " << (float) count_inlier
-//						/ (float) points2d_prev.size() << endl;
+////				cout << "Inliers: " << (float) count_inlier
+////						/ (float) points2d_prev.size() << endl;
+//				cout << "Inliers num: " << count_inlier << endl;
 //				cout << "total points: " << points2d_prev.size() << endl;
 //
 //				cout << "R: " << R << endl << "t: " << t << endl;

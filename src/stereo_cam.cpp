@@ -92,14 +92,14 @@ int main(int argc, char** argv) {
 	Mat t_cam = Mat::zeros(3, 1, CV_64F);
 	Mat P1, P2;
 	projectionFromKRt(Kl, R_cam, t_cam, P1);
-	t_cam.at<double> (0, 0) = -0.0615;
+	t_cam.at<double> (0, 0) = 0.0615;
 	projectionFromKRt(Kr, R_cam, t_cam, P2);
 	cout << "P1: " << P1 << endl << "P2: " << P2 << endl;
 
 	Mat img_origin_r, img_r, img_origin_l, img_l;
 
 	// init detection and extraction container
-	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(35);
+	Ptr<FastFeatureDetector> detector = FastFeatureDetector::create(15);
 	Ptr<xfeatures2d::DAISY> extractor = xfeatures2d::DAISY::create();
 
 	vector<Point2f> good_prev;
@@ -115,6 +115,7 @@ int main(int argc, char** argv) {
 	Mat R, t, R1, R2, Q;
 	vector<Vec3f> point_cloud_est;
 	vector<vector<Point3d> > point3d_vec;
+	vector<Vec3d> point_cloud1, point_cloud2;
 	//	vector<vector<vector<Point3d> > > point3d_vec_pair;
 
 	// init sba and set params
@@ -132,11 +133,12 @@ int main(int argc, char** argv) {
 
 	clock_t c_begin = clock();
 
-	for (int img_i = 0; img_i < 4; img_i++) {
+	for (int img_i = 0; img_i < 2; img_i++) {
+		int position = img_i + 0;
 		stringstream ss_r, ss_l;
-		ss_r << "dataset/stereo_set1/" << setw(2) << setfill('0') << img_i
+		ss_r << "dataset/stereo_set1/" << setw(2) << setfill('0') << position
 				<< "r.jpg";
-		ss_l << "dataset/stereo_set1/" << setw(2) << setfill('0') << img_i
+		ss_l << "dataset/stereo_set1/" << setw(2) << setfill('0') << position
 				<< "l.jpg";
 		cout << "current idx: " << img_i << endl;
 		img_origin_r = imread(ss_r.str(), CV_BGR2GRAY);
@@ -229,12 +231,18 @@ int main(int argc, char** argv) {
 						good_trans_prev[i]) - good_prev.begin();
 				int pos_curr = find(good_r.begin(), good_r.end(),
 						good_trans_curr[i]) - good_r.begin();
-				if (pos_prev < good_prev.size() && pos_curr < good_r.size()) {
+				if (pos_prev < good_prev.size() && pos_curr < good_r.size()
+						&& point3d_vec[img_i - 1][pos_prev].z > 0
+						&& point3d_vec[img_i][pos_curr].z > 0
+						&& point3d_vec[img_i - 1][pos_prev].z < 0.8
+						&& point3d_vec[img_i][pos_curr].z < 0.8) {
 					good_id_prev.push_back(pos_prev);
 					good_id_curr.push_back(pos_curr);
 					point3d_pair_prev.push_back(
 							point3d_vec[img_i - 1][pos_prev]);
 					point3d_pair_curr.push_back(point3d_vec[img_i][pos_curr]);
+					point_cloud1.push_back(point3d_vec[img_i - 1][pos_prev]);
+					point_cloud2.push_back(point3d_vec[img_i][pos_curr]);
 				}
 			}
 
@@ -242,8 +250,10 @@ int main(int argc, char** argv) {
 			Mat mask;
 			cout << "size: " << point3d_pair_prev.size() << ", "
 					<< point3d_pair_curr.size() << endl;
-			estimateAffine3D(point3d_pair_prev, point3d_pair_curr, Rt, mask);
+			int inlier = estimateAffine3D(point3d_pair_prev, point3d_pair_curr,
+					Rt, mask);
 			Affine3d Rt_af(Rt);
+			cout << "Inlier: " << inlier << endl;
 			cout << "R: " << Rt_af.rotation() << endl;
 			cout << "t: " << Rt_af.translation() << endl;
 			//			match_array.push_back(match_img_pair);
@@ -257,7 +267,7 @@ int main(int argc, char** argv) {
 				circle(show_img_curr, good_r[good_id_curr[i]], 2,
 						Scalar(0, 255, 0), -1);
 				line(show_img_curr, good_prev[good_id_prev[i]],
-						good_r[good_id_curr[i]], Scalar(255, 0, 0), 1);
+						good_r[good_id_curr[i]], Scalar(255, 0, 0), 0.5);
 			}
 			imshow("Features_curr", show_img_curr);
 			imshow("Features_prev", show_img_prev);
@@ -286,18 +296,33 @@ int main(int argc, char** argv) {
 	window.setWindowPosition(Point(200, 200));
 	window.setBackgroundColor(); // black by default
 
-	Matx33d K = Matx33d(Kl.at<double> (0, 0), 0, Kl.at<double> (0, 2), 0,
-			Kl.at<double> (0, 0), Kl.at<double> (1, 2), 0, 0, 1);
+	Matx33d K = Matx33d(Kr.at<double> (0, 0), 0, Kr.at<double> (0, 2), 0,
+			Kr.at<double> (0, 0), Kr.at<double> (1, 2), 0, 0, 1);
 
-	if (point_cloud_est.size() > 0) {
-		cout << "Rendering points   ... ";
-		viz::WCloud cloud_widget(point_cloud_est, viz::Color::green());
-		window.showWidget("point_cloud", cloud_widget);
+	if (point_cloud1.size() > 0) {
+		cout << "Rendering points 1   ... ";
+		viz::WCloud cloud_widget1(point_cloud1, viz::Color::green());
+		window.showWidget("point_cloud1", cloud_widget1);
 		cout << "[DONE]" << endl;
 	} else {
-		cout << "Cannot render points: Empty pointcloud" << endl;
+		cout << "Cannot render points 1: Empty pointcloud" << endl;
+	}
+	if (point_cloud2.size() > 0) {
+		cout << "Rendering points 2   ... ";
+		viz::WCloud cloud_widget2(point_cloud2, viz::Color::yellow());
+		window.showWidget("point_cloud2", cloud_widget2);
+		cout << "[DONE]" << endl;
+	} else {
+		cout << "Cannot render points 2: Empty pointcloud" << endl;
 	}
 
+	for(size_t i = 0; i < point_cloud1.size(); i++) {
+		viz::WLine l(point_cloud1[i], point_cloud2[i], viz::Color::white());
+		window.showWidget("l" + i, l);
+	}
+//	for(size_t i = 0; i < point_cloud1.size(); i++)
+
+	path.push_back(Affine3d(R_cam, t_cam));
 	if (path.size() > 0) {
 		cout << "Rendering Cameras  ... ";
 		window.showWidget(
